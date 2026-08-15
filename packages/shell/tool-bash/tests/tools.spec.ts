@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -817,17 +817,25 @@ describe('session-cwd routing (per-session workdir)', () => {
 
   it('a relative workdir is resolved against the session cwd', async () => {
     const ctx = await setup()
-    // session cwd /usr + relative 'bin' → /usr/bin
-    const result = await call(ctx, 'bash', { command: 'pwd', description: 'pwd', workdir: 'bin' }, agentInCwd('/usr'))
-    expect(text(result).trim()).toMatch(/\/usr\/bin$/)
+    // session cwd + relative 'bin' → cwd/bin (a real temp dir; /usr does not
+    // exist on Termux)
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-cwd-'))
+    mkdirSync(join(dir, 'bin'))
+    const result = await call(ctx, 'bash', { command: 'pwd', description: 'pwd', workdir: 'bin' }, agentInCwd(dir))
+    expect(text(result).trim()).toBe(join(dir, 'bin'))
+    rmSync(dir, { recursive: true, force: true })
   })
 
   it('two sessions with different cwds each run bash in their own dir', async () => {
     const ctx = await setup()
-    const inUsr = await call(ctx, 'bash', { command: 'pwd', description: 'pwd' }, agentInCwd('/usr'))
-    const inTmp = await call(ctx, 'bash', { command: 'pwd', description: 'pwd' }, agentInCwd('/tmp'))
-    expect(text(inUsr).trim()).toMatch(/\/usr$/)
-    expect(text(inTmp).trim()).toMatch(/\/tmp$/)
+    const dirA = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-a-'))
+    const dirB = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-b-'))
+    const inA = await call(ctx, 'bash', { command: 'pwd', description: 'pwd' }, agentInCwd(dirA))
+    const inB = await call(ctx, 'bash', { command: 'pwd', description: 'pwd' }, agentInCwd(dirB))
+    expect(text(inA).trim()).toBe(dirA)
+    expect(text(inB).trim()).toBe(dirB)
+    rmSync(dirA, { recursive: true, force: true })
+    rmSync(dirB, { recursive: true, force: true })
   })
 
   it('falls back to the executor default when the agent has no session cwd', async () => {

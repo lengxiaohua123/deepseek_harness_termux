@@ -92,14 +92,15 @@ All three packages' suites are green on this machine (attachment, subprocess, te
 - `subprocess-local/tests/process-exit.spec.ts` — failed on the android platform throw in `createProcessInspector`, not on sandbox cleanup.
 - `terminal-bash/tests/local.spec.ts` — failed on the same inspector throw plus a test that hardcoded `/bin/bash`; both fixed.
 
-Full-suite baseline on this machine (13.5 min, `--maxWorkers=4`): 13226 passed / 71 failed / 111 skipped (13408 tests, 811 files). The 71 failures are all environmental and none touch the adapted packages — expected-failure categories, re-verify against this list after each sync instead of chasing them:
+Full-suite baseline on this machine (13 min, `--maxWorkers=4`): 13376 passed / 28 failed / 111 skipped (13515 tests, 811 files). The 28 are all environmental or load flakes — none touch the adapted packages. Re-verify against this list after each sync instead of chasing them:
 
-- HMR/`--expose-internals` (app-boot `hmr-config`/`user-patches`/`app-boot`) — vitest forks run without `--expose-internals`; the node-addon chain that replaces it is absent on Android.
-- Hardcoded `/tmp` (acp-demo) — `/tmp` is root-owned here; tests must use `os.tmpdir()`.
-- Android FS denial semantics (fs-local, tool-fs*, tool-str-replace-editor) — tests assert writes outside the workspace are denied; the sandbox backend is absent so denial paths differ. NOTE: their earlier failures were actually the hard-link ban in fs-local's createIfAbsent publish (fixed in the ledger); re-verify against this category only after a sync changes fsio.ts.
-- Missing platform tools (lsp-stdio tsserver, directory-picker zenity/kdialog, claude-code/codex binaries, tool-bash `/usr/bin` PATH assertion, gen-third-party-notices optional payloads).
-- Slow-machine timeouts and clock races (py-types 5s, settings-file 5s, sqlite timestamp compares).
-- Node 26 / mock quirks (credentials PrettyFormatPluginError, agent-presets spyOn target, oxlint-contract debug output).
+- oxlint-contract (11) and install-lefthook (4) — tooling version / hard-link install; lefthook is unused on Termux.
+- subagent-claude-code / subagent-codex real-product (7) — need the external CLIs and their API keys.
+- sqlite ×2 — revision-timestamp race and inspect-API behavior on a slow machine; semantics-sensitive, left alone.
+- lsp-stdio, process-exit, acp-snapshot (3) — timing flakes: each passes in isolation, fails only under full-load memory pressure.
+- credentials ×1 — Android filesystem does not reflect chmod(600) the way the test asserts.
+- tool-bash was fixed: the workdir tests assumed `/usr` exists (it does not on Termux); they now use real temp dirs.
+- gen-third-party-notices ×1 — optional Claude SDK payload not installed.
 
 Reliable suites for the adaptation surface: `attachment-local/tests/image.spec.ts`, `subprocess-local/tests/terminal.spec.ts`, `subprocess-local/tests/spawn.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`.
 

@@ -9,7 +9,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { readdirSync } from 'node:fs'
-import { open, mkdir, readFile, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
+import { open, mkdir, readFile, readdir, realpath, link, rename, rm, stat, truncate } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
@@ -548,6 +548,17 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     try {
       await link(tmp, finalPath)
       linked = true
+    } catch (error) {
+      // Android SELinux (untrusted_app) forbids hard links outright; rename is
+      // still atomic and loses only the "first writer wins" race, which
+      // single-process Android runs do not contend for.
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'EACCES' || code === 'EPERM') {
+        await rename(tmp, finalPath)
+        linked = true
+      } else {
+        throw error
+      }
     } finally {
       // Remove an unpublished temp on failure. After publication, defer cleanup
       // until the directory entry is durable so cleanup cannot reject a live log.

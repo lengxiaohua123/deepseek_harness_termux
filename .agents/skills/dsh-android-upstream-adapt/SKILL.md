@@ -86,12 +86,13 @@ node --import tsx/esm node_modules/vitest/vitest.mjs run packages/<group>/<pkg>/
 
 This bypasses the same pnpm pre-run trap as step 3.
 
-Known environment failures on this machine — do not chase them unless the change touches their paths:
+All three packages' suites are green on this machine (attachment, subprocess, terminal-bash — 207 tests). Earlier "environment failures" were resolved by the adaptations below, not worked around:
 
-- `packages/attachment/attachment-local/tests/store.spec.ts` — directory `fsync` returns EACCES on Android.
-- `packages/subprocess/subprocess-local/tests/process-exit.spec.ts` — child-process exit cleanup hangs under the sandbox (fails even for the non-terminal scenario).
+- `attachment-local/tests/store.spec.ts` — failed on root-owned Android ancestors (`/data`, `/data/data`) during the durability walk and on forbidden hard links; both now degrade gracefully (see step 7).
+- `subprocess-local/tests/process-exit.spec.ts` — failed on the android platform throw in `createProcessInspector`, not on sandbox cleanup.
+- `terminal-bash/tests/local.spec.ts` — failed on the same inspector throw plus a test that hardcoded `/bin/bash`; both fixed.
 
-Reliable suites for the adaptation surface: `attachment-local/tests/image.spec.ts`, `subprocess-local/tests/terminal.spec.ts`, `subprocess-local/tests/spawn.spec.ts`.
+Reliable suites for the adaptation surface: `attachment-local/tests/image.spec.ts`, `subprocess-local/tests/terminal.spec.ts`, `subprocess-local/tests/spawn.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`.
 
 ## 6. Boot the web server
 
@@ -112,6 +113,10 @@ Re-apply or re-verify each item when upstream rewrote the owning file:
 - node-pty still builds via prebuild fallback with `--nodedir=$PREFIX`.
 - sharp still falls back to `@img/sharp-wasm32`.
 - Lazy native imports survive upstream rewrites: `attachment-local/src/image.ts` (`await import('sharp')` on first use) and `subprocess-local/src/index.ts` (`await import('node-pty')` on first PTY spawn). They are behavior-neutral; re-apply the pattern if upstream inlines the static imports again.
+- Terminal shell path stays Termux-safe: `terminal-bash/src/config.ts` resolves the default with `existsSync('/bin/bash') ? '/bin/bash' : 'bash'` — Termux has no `/bin/bash`.
+- `native-path-opener.ts` keeps the android branch (`termux-open(1)` via the intent launcher) and `canOpenNativePath('android')` answers true; without them the platform throws and the open button hides.
+- `process-inspector.ts` `createProcessInspector` routes `'android'` to the Linux `/proc` inspector (arm64 syscall table); `spawn.ts` group-liveness includes `'android'`. These make terminal inspection and tree teardown equal to Linux on Termux.
+- `attachment-local/src/store.ts` keeps two Android degradations: `syncDirectory` skips root-owned ancestors it cannot open (`/data`, `/data/data` — EACCES/EPERM) instead of failing the publication, and the object publish falls back from `link()` to `rename()` when SELinux forbids hard links (same pattern as session-persistence-jsonl).
 - Directory picker still falls back to the `browse` backend (`tsconfig.base.json` carries the client-package mapping).
 - Sandbox stays fail-closed (Landlock `ENOSYS`, no bwrap) with an explicit error, never silent degradation.
 - Session persistence still publishes via rename when hard links are forbidden.

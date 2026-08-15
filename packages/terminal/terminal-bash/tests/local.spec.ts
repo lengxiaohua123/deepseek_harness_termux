@@ -140,8 +140,11 @@ describe('terminal-bash real shell', () => {
   it('wraps the exact shell argv under confined policy and unregisters on reload', async () => {
     const { ctx, root, agent, fiber, sandbox } = await harness('workspace-write')
     const created = await ctx.terminals.spawn(agent, { type: 'shell' })
+    // Mirrors the config default: the canonical /bin/bash path where present,
+    // else a PATH-resolved bash (Termux has no /bin/bash).
+    const expectedShell = existsSync('/bin/bash') ? '/bin/bash' : 'bash'
     expect(sandbox.calls).toEqual([{
-      argv: ['/bin/bash', '--noprofile', '--norc', '-i'],
+      argv: [expectedShell, '--noprofile', '--norc', '-i'],
       policy: { mode: 'workspace-write', workspaceRoot: realpathSync.native(root), sessionId: 'agent-workspace-write' },
     }])
     await fiber.dispose()

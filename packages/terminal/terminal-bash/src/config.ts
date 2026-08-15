@@ -1,12 +1,16 @@
 /** Validated configuration for the local PTY backend. */
 
+import { existsSync } from 'node:fs'
 import z from '@deepseek-ai/schemastery'
+
+/** Interactive shell executable: prefer the canonical desktop path when present, else resolve via PATH (Termux has no `/bin/bash`). */
+const DEFAULT_SHELL_PATH = existsSync('/bin/bash') ? '/bin/bash' : 'bash'
 
 /** Public plugin configuration. */
 export interface Config {
   /** Backend registry type (default: `shell`). */
   backendType?: string
-  /** Interactive shell executable (default: `/bin/bash`). */
+  /** Interactive shell executable (default: `/bin/bash` when present, else `bash` via PATH). */
   shellPath?: string
   /** Shell arguments (default: `--noprofile --norc -i`). */
   shellArgs?: string[]
@@ -43,7 +47,7 @@ export type ResolvedConfig = Required<Config>
 /** Schemastery config exposed by the plugin. */
 export const Config: z<Config> = z.object({
   backendType: z.string().default('shell'),
-  shellPath: z.string().default('/bin/bash'),
+  shellPath: z.string().default(DEFAULT_SHELL_PATH),
   shellArgs: z.array(z.string()).default(['--noprofile', '--norc', '-i']),
   rows: z.number().default(40),
   cols: z.number().default(160),

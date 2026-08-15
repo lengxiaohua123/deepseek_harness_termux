@@ -5,7 +5,8 @@
  * The default intent prefers the default browser for documents it renders when
  * the platform can name one, then falls back to the default application. WSL
  * translates every path for the Windows desktop instead of assuming a Linux
- * GUI. The text-editor intent never consults the browser.
+ * GUI. Termux opens through `termux-open(1)`, the Android intent launcher. The
+ * text-editor intent never consults the browser.
  */
 
 import { release as osRelease } from 'node:os'
@@ -149,6 +150,12 @@ async function openNativePathWithIntent(
     return
   }
 
+  if (platform === 'android') {
+    // Termux: termux-open(1) hands the path to the Android intent system.
+    await run('termux-open', [path], signal)
+    return
+  }
+
   throw new Error(`native path opener is unsupported on ${platform}`)
 }
 
@@ -157,15 +164,17 @@ async function openNativePathWithIntent(
  *
  * macOS and Windows always carry a desktop opener; Linux does when it is WSL
  * (the Windows desktop takes the path) or a display server is announced.
- * A headless or containerised Linux host answers false, which is what lets a
- * surface show a path as text instead of offering a button that would spawn
- * `xdg-open` into nothing.
+ * Termux always carries `termux-open(1)` (termux-tools). A headless or
+ * containerised Linux host answers false, which is what lets a surface show a
+ * path as text instead of offering a button that would spawn `xdg-open` into
+ * nothing.
  * @param internals - platform and environment seam for deterministic tests.
  * @returns true when handing a path to the native opener can work at all.
  */
 export function canOpenNativePath(internals: PathOpenerInternals = {}): boolean {
   const platform = internals.platform ?? process.platform
   if (platform === 'darwin' || platform === 'win32') return true
+  if (platform === 'android') return true
   if (platform !== 'linux') return false
   const env = internals.env ?? process.env
   return isWsl(internals) || present(env.DISPLAY) || present(env.WAYLAND_DISPLAY)

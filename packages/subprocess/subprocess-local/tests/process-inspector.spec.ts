@@ -124,6 +124,15 @@ describe('Linux process inspector', () => {
     expect(fake.kills).toEqual([[-40, 'SIGINT'], [10, 'SIGTERM']])
   })
 
+  it('routes Android/Termux to the Linux /proc inspector', () => {
+    const fake = fakeInternals()
+    fake.dirs.set('/proc', ['10'])
+    fake.files.set('/proc/10/stat', stat(10, 20, 30, 40, '500'))
+    const inspector = createProcessInspector('android', 'arm64', fake.internals)
+    expect(inspector.foregroundPgid(10)).toBe(40)
+    expect(inspector.processTree(10)).toEqual([{ pid: 10, started: '500' }])
+  })
+
   it('detects read, select, poll, and epoll waits across non-leader threads', () => {
     const fake = fakeInternals()
     fake.dirs.set('/proc', ['100', '101'])

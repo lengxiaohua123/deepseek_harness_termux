@@ -116,6 +116,14 @@ describe('native path opener', () => {
     expect(run).toHaveBeenCalledWith('xdg-open', ['/tmp/a.txt'], expect.any(AbortSignal))
   })
 
+  it('opens with termux-open on Android/Termux', async () => {
+    const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
+    await openNativePath('/data/data/com.termux/files/home/a.txt', signal(), { platform: 'android', run })
+    expect(run).toHaveBeenCalledWith(
+      'termux-open', ['/data/data/com.termux/files/home/a.txt'], expect.any(AbortSignal),
+    )
+  })
+
   it('rejects unsupported platforms', async () => {
     await expect(openNativePath('/x', signal(), { platform: 'freebsd' as NodeJS.Platform }))
       .rejects.toThrow('unsupported on freebsd')
@@ -130,7 +138,9 @@ describe('native path opener', () => {
       ? 'powershell.exe'
       : process.platform === 'linux'
         ? 'xdg-open'
-        : 'open'
+        : process.platform === 'android'
+          ? 'termux-open'
+          : 'open'
     expect(run.mock.calls[0]?.[0]).toBe(expected)
   })
 
@@ -292,6 +302,10 @@ describe('canOpenNativePath', () => {
   it('always answers yes where the desktop is part of the platform', () => {
     expect(canOpenNativePath({ platform: 'darwin', env: {} })).toBe(true)
     expect(canOpenNativePath({ platform: 'win32', env: {} })).toBe(true)
+  })
+
+  it('answers yes on Termux where termux-open is the intent launcher', () => {
+    expect(canOpenNativePath({ platform: 'android', env: {} })).toBe(true)
   })
 
   it('requires a display server or WSL interop on linux', () => {

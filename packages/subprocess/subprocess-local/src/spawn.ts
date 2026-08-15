@@ -394,7 +394,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
       // it can execute no work and cannot be signalled into quiescence. Only
       // inspect after direct-child settlement so live-process polls remain a
       // syscall rather than repeated process-table scans.
-      if (settled && platform === 'linux' && linuxGroupHasLiveMembers(pid) === false) return false
+      if (settled && (platform === 'linux' || platform === 'android') && linuxGroupHasLiveMembers(pid) === false) return false
       return true
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code

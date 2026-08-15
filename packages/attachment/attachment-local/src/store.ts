@@ -2,7 +2,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { chmod, link, mkdir, open, readFile, unlink } from 'node:fs/promises'
+import { chmod, link, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname, join, parse, resolve } from 'node:path'
 import {
   AttachmentError,
@@ -77,7 +77,18 @@ async function syncDirectory(path: string): Promise<void> {
   /* v8 ignore next -- Windows cannot open directory handles; NTFS metadata journaling owns entry durability there. */
   if (process.platform === 'win32') return
   /* v8 ignore start -- Windows cannot exercise directory fsync; POSIX behavior tests enforce this peer. */
-  const handle = await open(path, constants.O_RDONLY)
+  let handle
+  try {
+    handle = await open(path, constants.O_RDONLY)
+  } catch (error) {
+    // Root-owned Android ancestors (/data, /data/data) are unreadable to the
+    // app user, so the durability walk degrades silently at the first one
+    // instead of failing the publication; the filesystem journals their
+    // entries. Other open failures stay loud.
+    const code = error instanceof Error && 'code' in error ? error.code : undefined
+    if (code === 'EACCES' || code === 'EPERM') return
+    throw error
+  }
   try {
     await handle.sync()
   } finally {
@@ -154,13 +165,24 @@ export async function saveImageFile(root: string, input: SaveImageAttachment, li
     await handle.sync()
     await handle.close()
     handle = undefined
+    let hardLinked = false
     try {
       await link(temporary, target)
+      hardLinked = true
     } catch (error) {
-      /* v8 ignore next -- Private same-filesystem directories make EEXIST the only recoverable link race. */
-      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
-      const existing = new Uint8Array(await readFile(target))
-      if (digest(existing) !== sha256) throw new AttachmentError('Stored attachment failed integrity verification.', 'ATTACHMENT_CORRUPT')
+      const code = error instanceof Error && 'code' in error ? error.code : undefined
+      if (code === 'EACCES' || code === 'EPERM') {
+        // Android SELinux (untrusted_app) forbids hard links outright; rename
+        // is still atomic and loses only the "first writer wins" dedup race,
+        // which single-process Android runs do not contend for.
+        await rename(temporary, target)
+      } else if (code === 'EEXIST') {
+        /* v8 ignore next -- Private same-filesystem directories make EEXIST the only recoverable link race. */
+        const existing = new Uint8Array(await readFile(target))
+        if (digest(existing) !== sha256) throw new AttachmentError('Stored attachment failed integrity verification.', 'ATTACHMENT_CORRUPT')
+      } else {
+        throw error
+      }
     }
     // Persist the target entry and close a concurrent bucket-creation window
     // before the reference can reach a session checkpoint. The dedup path
@@ -168,7 +190,8 @@ export async function saveImageFile(root: string, input: SaveImageAttachment, li
     // that writer reaches its own durability boundary.
     await syncDirectory(bucket)
     await syncDirectory(join(root, 'objects'))
-    await unlink(temporary)
+    // link() leaves the staging name behind; rename() consumed it.
+    if (hardLinked) await unlink(temporary)
   } catch (error) {
     /* v8 ignore next -- A descriptor can remain open only when the underlying write/sync/close operation fails. */
     if (handle !== undefined) await handle.close().catch(

@@ -2,6 +2,12 @@
 
 本文件是仓库的快速上手与本地使用备忘,命令均以仓库根目录为工作目录、以实际验证为准。权威细节请以 [docs/architecture.md](docs/architecture.md)、[docs/development.md](docs/development.md)、[docs/testing.md](docs/testing.md) 为准。
 
+## 分支策略
+
+- `master`:仅同步上游(`git fetch && git reset --hard origin/master`),不放任何本地改动。
+- `adapt/android-termux`:本机 Android 适配的全部内容(文档、skill、session 修复、依赖与 patch),日常在此分支工作与运行。
+- `feat/android-native-deps`:仅依赖与 patch(已并入 `adapt/android-termux`,保留为独立依赖集)。
+
 项目是插件化 agent harness(基于 vendored Cordis):`pnpm dsh` 是产品启动器(入口 `apps/cli/src/bin.ts`)。
 
 ## 环境与安装

@@ -1,0 +1,23 @@
+--- a/lib/native/base/base.cc
++++ b/lib/native/base/base.cc
+@@ -86,6 +86,7 @@
+     #include <sys/statvfs.h>
+     #include <sys/types.h>
+     #include <sys/socket.h>
++    #include <sys/syscall.h>
+     #include <sys/un.h>
+     #include <sys/wait.h>
+     #include <netinet/in.h>
+@@ -2964,7 +2965,12 @@
+     }
+ 
+     struct statx sxb;
++#if defined(__ANDROID__)
++    // bionic does not declare the statx() function; use the raw syscall.
++    if (syscall(SYS_statx, fd, pathname, stat_flags, stat_mask, &sxb) < 0) {
++#else
+     if (statx(fd, pathname, stat_flags, stat_mask, &sxb) < 0) {
++#endif
+         switch (errno) {
+             case ENOENT: {
+                 if (!(flags & (int)StatFlag::SilentMissing)) {

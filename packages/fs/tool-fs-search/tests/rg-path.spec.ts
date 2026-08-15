@@ -1,9 +1,9 @@
 /**
- * Failure-path tests for the lazy packaged-ripgrep resolution. The success
- * path (the real `@vscode/ripgrep` module) is exercised throughout
- * tools.spec.ts; here the module is mocked to throw at evaluation, proving a
- * missing or corrupt platform package (`--omit=optional`, partial install)
- * surfaces as a per-call `SEARCH_FAILED` — not a composition-load failure.
+ * Resolution-path tests for the lazy ripgrep lookup. The module is mocked to
+ * throw at evaluation — the shape a missing or corrupt platform package
+ * produces — and the product then falls back to a PATH `rg` (Android/Termux
+ * has no `@vscode/ripgrep` platform build), memoizing the resolved value.
+ * The success path with a real binary is exercised throughout tools.spec.ts.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -30,8 +30,11 @@ describe('lazy packaged-ripgrep resolution', () => {
       .rejects.toMatchObject({ name: 'SearchError', code: 'SEARCH_FAILED' })
   })
 
-  it('keeps failing every subsequent call (the resolution is memoized)', async () => {
-    await expect(resolveRgPath()).rejects.toThrow(/platform package/)
-    await expect(resolveRgPath()).rejects.toThrow(/platform package/)
+  it('falls back to a PATH rg and memoizes the resolution', async () => {
+    // The packaged build is missing, so the product falls back to a
+    // PATH-resolved `rg` (Termux ships no @vscode/ripgrep platform package);
+    // the memoized value is the same on every call.
+    await expect(resolveRgPath()).resolves.toBe('rg')
+    await expect(resolveRgPath()).resolves.toBe('rg')
   })
 })

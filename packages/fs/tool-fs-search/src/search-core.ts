@@ -165,11 +165,17 @@ let rgPathPromise: Promise<string> | undefined
  * boundary keeps that failure at the first search call as `SEARCH_FAILED` —
  * the package's documented no-load-time-probe contract.
  *
- * @returns the packaged binary's absolute path; the memoized promise rejects
- *   when the platform package cannot be resolved.
+ * Android/Termux has no `@vscode/ripgrep` platform package (VS Code never
+ * published one), so the resolution falls back to a PATH `rg` — Termux's
+ * `pkg install ripgrep`, or a statically linked aarch64 musl build (glibc
+ * arm64 binaries do not load on bionic). The subprocess seam resolves the
+ * bare name through PATH.
+ *
+ * @returns the packaged binary's absolute path, or `rg` resolved via PATH
+ *   when no platform package exists.
  */
 export function resolveRgPath(): Promise<string> {
-  rgPathPromise ??= import('@vscode/ripgrep').then(module => module.rgPath)
+  rgPathPromise ??= import('@vscode/ripgrep').then(module => module.rgPath).catch(() => 'rg')
   return rgPathPromise
 }
 

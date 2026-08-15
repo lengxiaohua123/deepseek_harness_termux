@@ -148,8 +148,9 @@ Re-apply only what upstream rewrote; everything else survives merges. Verify eac
 | `packages/subprocess/subprocess-local/src/spawn.ts` | group-liveness check includes `'android'` | keeps tree teardown equal to Linux |
 | `packages/terminal/terminal-bash/src/config.ts` | default shell `existsSync('/bin/bash') ? '/bin/bash' : 'bash'` | Termux has no `/bin/bash` |
 | `packages/settings/settings-file/src/index.ts` | watcher runs `usePolling` on android | this filesystem delivers inotify events late/lossy for rapid atomic renames; polling reads the one small document reliably |
+| `packages/fs/tool-fs-search/src/search-core.ts` | `resolveRgPath()` falls back to a PATH `rg` when `@vscode/ripgrep` fails to load | VS Code never published an android platform package; Termux supplies `rg` via `pkg install ripgrep` or a statically linked aarch64 musl binary (glibc arm64 binaries do not load on bionic) |
 
-Test companions travel with the code: `apiproxy/tests/native-path-opener.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`, `settings-file/tests/local.spec.ts` (waitFor raised to 15s).
+Test companions travel with the code: `apiproxy/tests/native-path-opener.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`, `settings-file/tests/local.spec.ts` (waitFor raised to 15s), `tool-fs-search/tests/tools.spec.ts` + `rg-path.spec.ts` (resolve via the product resolver instead of a static `@vscode/ripgrep` import).
 
 ### Dependency and patch layer (upstream bumps the dependency → re-apply)
 

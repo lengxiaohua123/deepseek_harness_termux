@@ -61,6 +61,8 @@ Repository-fixed adaptation facts:
 - **sharp**: runs through the `@img/sharp-wasm32` fallback (root devDependency); no libvips needed.
 - **Platform boundary**: sandbox process isolation needs Landlock (Android kernels return `ENOSYS`) or `bwrap` (absent) — the sandbox is fail-closed by design (explicit `SandboxUnavailableError`, never a silent downgrade).
 - **directory-picker** resolves to the `browse` backend off darwin/win32/linux; the client surface package needs a `tsconfig.base.json` `paths` entry for source runs (a missing entry shows up as `ERR_MODULE_NOT_FOUND` when the auto entry dynamically imports it — check `dsh-client-ui-*` paths when adding client packages).
+- **session persistence**: Android SELinux (`untrusted_app`) forbids `link()` everywhere; `session-persistence-jsonl`'s `materializePosix` falls back to `rename()` on `EACCES`/`EPERM`. If a `link ... EACCES` error resurfaces in a session write, the running branch is missing that fix (commit `16a6a7f347`) — `feat/android-native-deps` predates it; run on `adapt/android-termux`.
+- **lazy native loading**: `sharp` and `node-pty` are dynamic-imported on first use, so booting web/headless never touches a native module until a terminal or attachment operation actually needs it.
 
 `esbuild`/`rolldown` platform packages are prebuilt and unaffected. Smoke-check the toolchain before trusting gate output:
 
@@ -69,6 +71,22 @@ pnpm exec vitest run packages/util/timeout   # unit runner
 pnpm run build:lib:host                      # tsc + tsdown/rolldown
 pnpm dsh --version                           # CLI entry
 ```
+
+## Run and troubleshoot (Android)
+
+```sh
+# built-lib run (no tsx; resolves workspace packages via node_modules links)
+node --expose-internals apps/cli/lib/bin.js web --port 3080
+# source run (tsx + tsconfig paths; picks up src changes without rebuilding)
+node --expose-internals --import tsx/esm apps/cli/src/bin.ts web --port 3080
+# headless task (same shape)
+node --expose-internals --import tsx/esm apps/cli/src/bin.ts --profile headless "task"
+```
+
+- `--expose-internals` is mandatory (cordis-plugin-hmr refuses to start without it); `NODE_OPTIONS` rejects it, so `pnpm dsh web` cannot carry the flag — always invoke `node` directly.
+- API key: `~/.dsh/.credentials.yaml` (environment wins, file falls back); not the repo `.env`.
+- Branch discipline: run on `adapt/android-termux` (owns every fix and the dependency set). `master` is a pure upstream mirror with none of the deps — never run pnpm or the web there. `feat/android-native-deps` has the dependency set but not the session fix.
+- Remotes: `origin` = upstream `deepseek-ai/deepseek-harness` (https, fetch only); `my` = `git@github.com:lengxiaohua123/deepseek_harness_termux.git` (SSH, push). Upstream mirror CI: `.github/workflows/sync-upstream.yml` (schedule needs the GitHub default branch to be `adapt/android-termux`).
 
 ## Update flow
 

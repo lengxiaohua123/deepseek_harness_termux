@@ -387,7 +387,7 @@ describe('watch', () => {
     await writeFile(path, 'ui-theme:\n  theme: dark\n  fontSize: 20\n')
     await vi.waitFor(() => {
       expect(scope.get()).toEqual({ theme: 'dark', fontSize: 20 })
-    }, { timeout: 5000 })
+    }, { timeout: 15_000 })
   })
 
   it('keeps the last good document over an invalid edit, then recovers', async () => {
@@ -407,7 +407,7 @@ describe('watch', () => {
     await writeFileAtomic(path, 'ui-theme:\n  theme: dark\n', { mode: 0o600 })
     await vi.waitFor(() => {
       expect(scope.get().theme).toBe('dark')
-    }, { timeout: 5000 })
+    }, { timeout: 15_000 })
   })
 
   it('treats file removal as an empty document', async () => {
@@ -420,7 +420,7 @@ describe('watch', () => {
     await rm(path)
     await vi.waitFor(() => {
       expect(scope.get()).toEqual({ theme: 'dark', fontSize: 14 })
-    }, { timeout: 5000 })
+    }, { timeout: 15_000 })
   })
 
   it('does not republish its own persisted write', async () => {

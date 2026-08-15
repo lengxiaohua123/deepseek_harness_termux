@@ -237,6 +237,10 @@ export class FileSettingsProvider extends SettingsProvider {
     const watcher = this.spec.watch
       ? chokidarWatch(await canonicalizeWatchPath(this.spec.filename), {
         ignoreInitial: true,
+        // Android's filesystem delivers inotify events late and lossy for rapid
+        // atomic renames (two sequential writeFileAtomic replaces miss the
+        // second event); polling reads the one small document directly.
+        usePolling: process.platform === 'android',
         awaitWriteFinish: {
           stabilityThreshold: this.spec.debounceMs,
           pollInterval: Math.max(1, Math.min(this.spec.debounceMs, 10)),

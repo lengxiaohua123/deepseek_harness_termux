@@ -133,6 +133,9 @@ export default defineConfig({
           // MaybeLocal in cjs_lexer::Parse) from worker threads on macOS,
           // Linux, and Windows. Forked workers avoid that shared thread path.
           pool: 'forks',
+          // Slow phones (Termux) exceed the 5s default; desktop is unaffected.
+          testTimeout: 30_000,
+          hookTimeout: 30_000,
           setupFiles: ['./scripts/test-invariants.ts'],
           include: testIncludes,
           exclude: [
@@ -148,6 +151,8 @@ export default defineConfig({
           name: 'process-bound',
           execArgv: vitestExecArgv,
           pool: 'forks',
+          testTimeout: 30_000,
+          hookTimeout: 30_000,
           setupFiles: ['./scripts/test-invariants.ts'],
           include: processBoundTests,
           exclude: [

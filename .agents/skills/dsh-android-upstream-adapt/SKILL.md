@@ -147,8 +147,9 @@ Re-apply only what upstream rewrote; everything else survives merges. Verify eac
 | `packages/subprocess/subprocess-local/src/process-inspector.ts` | `createProcessInspector` routes `'android'` to `LinuxProcessInspector` | Termux reports platform `'android'`; the old code threw, breaking every terminal |
 | `packages/subprocess/subprocess-local/src/spawn.ts` | group-liveness check includes `'android'` | keeps tree teardown equal to Linux |
 | `packages/terminal/terminal-bash/src/config.ts` | default shell `existsSync('/bin/bash') ? '/bin/bash' : 'bash'` | Termux has no `/bin/bash` |
+| `packages/settings/settings-file/src/index.ts` | watcher runs `usePolling` on android | this filesystem delivers inotify events late/lossy for rapid atomic renames; polling reads the one small document reliably |
 
-Test companions travel with the code: `apiproxy/tests/native-path-opener.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`.
+Test companions travel with the code: `apiproxy/tests/native-path-opener.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`, `settings-file/tests/local.spec.ts` (waitFor raised to 15s).
 
 ### Dependency and patch layer (upstream bumps the dependency → re-apply)
 

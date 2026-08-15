@@ -78,13 +78,24 @@ else
 DSH_WEB_DIR="__DSH_WEB_DIR__"  # dsh 仓库目录
 DSH_WEB_PORT=3080  # web 端口
 
+# 是否已持有 Termux wake lock（dumpsys power 中的 termux:service-wakelock）
+wake_lock_held() {
+    if command -v su >/dev/null 2>&1; then
+        su -c 'dumpsys power' 2>/dev/null | grep -q 'termux:service-wakelock' && return 0
+    fi
+    return 1
+}
+
 # 启动 dsh web（构建模式,可指定端口: dshstart 或 dshstart 8080）
 dshstart() {
     local port="${1:-$DSH_WEB_PORT}"
     if tmux has-session -t dshweb 2>/dev/null; then
         echo "dsh web 已在运行，attach 进去: tmux attach -t dshweb"
     else
-        termux-wake-lock
+        # 仅在未持有 wake lock 时获取，避免重复广播
+        if ! wake_lock_held; then
+            termux-wake-lock
+        fi
         tmux new-session -d -s dshweb "cd $DSH_WEB_DIR && node --expose-internals apps/cli/lib/bin.js web --port $port"
         sleep 1
         if tmux has-session -t dshweb 2>/dev/null; then

@@ -160,7 +160,13 @@ Upstream-owned, do not touch: `patches/node-pty@1.1.0.patch` (upstream supplies 
 
 ### Docs and CI (upstream rewrites conflict; keep the local version)
 
-`USE.md`, `apps/cli/README*.md` (`--expose-internals`), `.github/workflows/sync-upstream.yml` (daily mirror; must stay on the default branch), `.agents/skills/`.
+- `USE.md` — Android run and adaptation conventions.
+- `apps/cli/README.md`, `README.zh.md`, `README.i18n.yaml` — `--expose-internals` notes, plus the i18n checksum manifest that tracks them.
+- `AGENTS.md` + `scripts/doc-budgets.manifest.json` — refreshed package index and its raised budget ceiling (1900→2000); no Android content, but keep the local copy when upstream rewrites them.
+- `.github/workflows/sync-upstream.yml` — daily upstream mirror; must stay on the default branch.
+- `.agents/skills/` — the skills themselves.
+
+Machine-local, NOT in the repo (do not hunt for them in the diff): `~/.zshrc` `dshstart`/`dshstop`/`dshstatus`/`dshattach` tmux helpers, `~/.dsh/settings.yaml` (danger-full-access default).
 
 ### Branch topology
 

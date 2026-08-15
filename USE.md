@@ -58,7 +58,7 @@ pnpm run check:all               # 全部门禁入口(scripts/run-gates.ts)
 pnpm dsh --help                                  # 启动器帮助
 pnpm dsh --profile headless "run the tests"      # 跑一个任务,打印最终回答后退出
 pnpm dsh --profile headless --dump-config        # 不启动,查看组合后的配置树
-pnpm dsh web                                     # 等价于 --profile web
+pnpm dsh web                                     # 等价于 --profile web;注意:web 需 --expose-internals,见下
 pnpm dsh plugin --profile <name> <pnpm args>     # 管理某 profile 的插件
 ```
 

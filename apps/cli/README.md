@@ -15,6 +15,8 @@ The `dsh` command is the product launcher for profiles: ordered stacks of plugin
 
 The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
 
+The `web` profile needs Node's `--expose-internals` at runtime (the HMR plugin refuses to start without it), so from the repository root launch it as `node --expose-internals --import tsx/esm apps/cli/src/bin.ts web` rather than `pnpm dsh web`.
+
 ## App arguments
 
 The launcher parses only its own flags and hands everything after them to the booted profile, where any injected app plugin may parse the shared immutable snapshot ([`dsh-cmdline`](../../packages/boot/cmdline/README.md)). Launcher flags therefore come first, and the first token the launcher does not recognize starts the app's arguments:

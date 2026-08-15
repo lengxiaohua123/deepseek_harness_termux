@@ -5,8 +5,13 @@ const decoratorSyntax = /^\s*@[A-Za-z_$][\w$]*/m
 /**
  * Worker arguments that keep process-wide Web Storage from shadowing jsdom storage.
  * Node lists the positive spelling in `allowedNodeEnvironmentFlags` for this negatable flag.
+ * `--expose-internals` lets the Loader's internal-module resolution work in tests where the
+ * `node-addon-require-builtin` native chain is absent (Android/Termux); harmless elsewhere.
  */
-export const vitestExecArgv = process.allowedNodeEnvironmentFlags.has('--webstorage') ? ['--no-webstorage'] : []
+export const vitestExecArgv = [
+  '--expose-internals',
+  ...process.allowedNodeEnvironmentFlags.has('--webstorage') ? ['--no-webstorage'] : [],
+]
 
 /**
  * Transform standard TypeScript decorators before Vite's default parser sees source files.

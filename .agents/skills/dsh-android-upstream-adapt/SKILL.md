@@ -38,7 +38,7 @@ git diff origin/master...HEAD --stat                 # what the merge pulled in
 git log origin/master.. -- packages/ vendor/ apps/   # which areas moved
 ```
 
-High-risk adaptation surfaces. Upstream rewrites here force re-application:
+High-risk adaptation surfaces. Upstream rewrites here force re-application — the complete file-by-file ledger with reasons is the "Adaptation ledger" section below:
 
 - `vendor/` — vendored Cordis; owns the loader's internal-module resolution that drives the `--expose-internals` requirement.
 - `packages/boot/app-boot`, `apps/cli` — launcher and Loader boot path.
@@ -122,6 +122,52 @@ Re-apply or re-verify each item when upstream rewrote the owning file:
 - Session persistence still publishes via rename when hard links are forbidden.
 - `USE.md` run instructions match the merged tree (built mode + `--expose-internals`).
 
+## Adaptation ledger — every divergence from upstream, and why
+
+Re-apply only what upstream rewrote; everything else survives merges. Verify each item against the live diff during step 1.
+
+### Code adaptations (upstream rewrites the file → re-apply)
+
+| File | Change | Why |
+|---|---|---|
+| `packages/attachment/attachment-local/src/image.ts` | static `import sharp` → lazy `loadSharp()` on first use | sharp resolves to `@img/sharp-wasm32` on Android; a WASM backend at boot is waste |
+| `packages/attachment/attachment-local/src/store.ts` | `syncDirectory` skips unopenable ancestors; publish falls back `link()` → `rename()` | root-owned `/data`/`/data/data` are unreadable; SELinux forbids hard links |
+| `packages/host/apiproxy/src/native-path-opener.ts` | android branch runs `termux-open`; `canOpenNativePath('android')` true | termux-open ships with termux-tools; without the branch the platform throws |
+| `packages/session/session-persistence-jsonl/src/index.ts` | publish via `rename()` when `link()` returns EACCES/EPERM | SELinux forbids hard links; rename stays atomic |
+| `packages/subprocess/subprocess-local/src/index.ts` | static `import * as nodePty` → `await import('node-pty')` at first PTY spawn | native addon load at boot is waste |
+| `packages/subprocess/subprocess-local/src/process-inspector.ts` | `createProcessInspector` routes `'android'` to `LinuxProcessInspector` | Termux reports platform `'android'`; the old code threw, breaking every terminal |
+| `packages/subprocess/subprocess-local/src/spawn.ts` | group-liveness check includes `'android'` | keeps tree teardown equal to Linux |
+| `packages/terminal/terminal-bash/src/config.ts` | default shell `existsSync('/bin/bash') ? '/bin/bash' : 'bash'` | Termux has no `/bin/bash` |
+
+Test companions travel with the code: `apiproxy/tests/native-path-opener.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`.
+
+### Dependency and patch layer (upstream bumps the dependency → re-apply)
+
+| Item | Change | Why |
+|---|---|---|
+| `patches/koffi@3.1.1.patch` + matching `pnpm-workspace.yaml` `patchedDependencies` entry | koffi statx call → raw `syscall(SYS_statx, ...)` | bionic headers do not declare statx; pinned to koffi@3.1.1 |
+| `package.json` devDependency `@img/sharp-wasm32` | wasm fallback for sharp | Android has no libvips; arch-independent |
+| `scripts/android-native-build.sh` | compiles koffi + node-pty locally | no android-arm64 prebuilds; node-pty needs `--nodedir=$PREFIX` |
+| `pnpm-lock.yaml` | lockfile | regenerate via `pnpm install --ignore-scripts` |
+
+Upstream-owned, do not touch: `patches/node-pty@1.1.0.patch` (upstream supplies it).
+
+### Configuration mapping
+
+| Item | Change | Why |
+|---|---|---|
+| `tsconfig.base.json` | client path alias for `dsh-client-ui-directory-picker-browse` | the browse picker fallback resolves from source |
+
+### Docs and CI (upstream rewrites conflict; keep the local version)
+
+`USE.md`, `apps/cli/README*.md` (`--expose-internals`), `.github/workflows/sync-upstream.yml` (daily mirror; must stay on the default branch), `.agents/skills/`.
+
+### Branch topology
+
+- `master` — upstream mirror only (`git reset --hard origin/master`), never edited.
+- `adapt/android-termux` — ALL adaptations (code + deps + docs), the daily working branch.
+- `feat/android-native-deps` — deps+patches-only snapshot (7 files), merged into adapt; useful to reinstall dependencies from, re-pushed but never re-based on upstream. Code adaptations cannot live there — they must merge against upstream on `adapt/android-termux` anyway, and the ledger above, not branch topology, is what prevents forgetting a re-apply.
+
 ## Troubleshooting
 
 Problems observed on this machine, with the verified fix. Symptoms below the first group are environmental, not code regressions.
@@ -132,9 +178,7 @@ Problems observed on this machine, with the verified fix. Symptoms below the fir
 | Boot fails `Cannot find package '@deepseek-ai/cordis-plugin-timer'` | Loader's `ModuleLoader.fromInternal()` needs Node's internal ESM loader; the `node-addon-require-builtin` native chain has no Android prebuild, so the fallback dies. Launch with `--expose-internals` |
 | Startup takes 15s+ | You launched in tsx source mode; per-import resolution probing (stat/ENOENT storms) costs 15-22s versus 1-5s built. Use `apps/cli/lib/bin.js`; tsx's own disk transform cache does not help because the bottleneck is resolution, not transpilation |
 | `pnpm install` reports koffi `invalid conversion` | koffi's native compile conflicts with bionic headers (statx signature). Use `pnpm install --ignore-scripts`, then `scripts/android-native-build.sh` |
-| Writing a file fails with EACCES on `link` | This filesystem forbids hard links, so temp-file+link atomic writes fail. Write via bash/`cat` or a rename-based tool; this is the same restriction the session-persistence rename fix works around |
-| `store.spec.ts` fails with EACCES | Directory `fsync` is not permitted on Android; the store suite cannot pass here. Not a regression |
-| `process-exit.spec.ts` times out | Child-process exit cleanup hangs under the sandbox; the non-terminal scenario fails too, so it is unrelated to node-pty. Not a regression |
+| Writing a file fails with EACCES on `link` | This filesystem forbids hard links, so temp-file+link atomic writes fail. Write via bash/`cat` or a rename-based tool; this is the same restriction the attachment-store and session-persistence rename fallbacks work around |
 | `dshstatus` port check reports "无法检测" | `ss`/`netstat` are not installed; `pkg install net-tools` |
 | `/proc/uptime` or `/proc/loadavg` permission denied | The sandbox masks them; measure with wall-clock and `/proc/<pid>/stat` tick deltas instead |
 | Whole machine feels slow | Memory pressure: ~9/11 GB used, swap active; close background apps before concluding a code regression |

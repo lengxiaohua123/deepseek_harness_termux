@@ -1,0 +1,4 @@
+interface:
+  display_name: "DSH Android Upstream Adaptation"
+  short_description: "Re-apply and verify Android/Termux adaptations after an upstream deepseek-harness update"
+  default_prompt: "Use $dsh-android-upstream-adapt when merging upstream master into adapt/android-termux or re-verifying the Android adaptation layer."

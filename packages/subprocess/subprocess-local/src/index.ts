@@ -12,7 +12,6 @@ import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 import { delimiter, extname, isAbsolute, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import * as nodePty from 'node-pty'
 import type { IPtyForkOptions } from 'node-pty'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
@@ -157,7 +156,6 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
   }
 
   // Local PTY allocation is synchronous, but the provider contract permits remote asynchronous allocation.
-  // oxlint-disable-next-line typescript/require-await -- Preserve promise rejection semantics at the async provider contract.
   async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
     const file = spec.argv[0]
     if (file === undefined || file.length === 0) {
@@ -172,7 +170,8 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       env: childEnv(spec.env),
     }
     const inspector = this.terminalInspector ?? createProcessInspector()
-    const terminal = nodePty.spawn(file, [...spec.argv.slice(1)], options)
+    const { spawn } = await import('node-pty')
+    const terminal = spawn(file, [...spec.argv.slice(1)], options)
     const handle = new LocalTerminalHandle(terminal, inspector, spec.graceMs)
     this.terminals.add(handle)
     const release = async (): Promise<void> => {

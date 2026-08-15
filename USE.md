@@ -8,6 +8,12 @@
 - `adapt/android-termux`:本机 Android 适配的全部内容(文档、skill、session 修复、依赖与 patch),日常在此分支工作与运行。
 - `feat/android-native-deps`:仅依赖与 patch(已并入 `adapt/android-termux`,保留为独立依赖集)。
 
+## 权限与批准策略(本地约定)
+
+- 默认执行模式为 `danger-full-access`(全文件访问 + 批准 `never`,无弹窗):写入于 `~/.dsh/settings.yaml` 的 `permission.defaultPreset`。本机无沙箱后端(bwrap/Landlock 均不可用),`workspace-write` 会 fail-closed 导致每条命令都要批准,故不采用。
+- **提权命令必须弹窗确认**:`su`、`sudo`、`tsu`、`doas` 及任何以 root 身份执行的命令,执行前 agent 必须调用 `ask_user_question` 征得用户确认,即使默认模式为 `danger-full-access`。Harness 的批准是会话级二元开关(ask/never),无"按命令弹窗"的内置规则,此为约定式执行。
+- 预设变更只对新建会话生效;当前会话需新开会话后生效。
+
 ## 远程与上游同步 CI
 
 - 本仓库 GitHub 远程:`https://github.com/lengxiaohua123/deepseek_harness_termux`;上游为 `deepseek-ai/deepseek-harness`。
@@ -73,7 +79,7 @@ pnpm run check:all               # 全部门禁入口(scripts/run-gates.ts)
 pnpm dsh --help                                  # 启动器帮助
 pnpm dsh --profile headless "run the tests"      # 跑一个任务,打印最终回答后退出
 pnpm dsh --profile headless --dump-config        # 不启动,查看组合后的配置树
-pnpm dsh web                                     # 等价于 --profile web;注意:web 需 --expose-internals,见下
+pnpm dsh web                                     # 等价于 --profile web;注意:web 需 --expose-internals,而 pnpm 启动器不传该 flag,故 Android 上用下面的直接 node 命令
 pnpm dsh plugin --profile <name> <pnpm args>     # 管理某 profile 的插件
 ```
 
@@ -83,10 +89,16 @@ pnpm dsh plugin --profile <name> <pnpm args>     # 管理某 profile 的插件
 
 ### Android/Termux 上运行 web UI
 
-`cordis-plugin-hmr` 运行需要 `--expose-internals`,因此不用 `pnpm dsh` 包装而直接调 `node`;无需任何 patch,原生能力全部可用:
+`--expose-internals` 是硬性要求:Loader 的 `ModuleLoader.fromInternal()` 需要它访问 Node 内部 ESM loader 来解析 workspace 插件(`node-addon-require-builtin` 原生链在 Android 上无预编译产物,回退失败)。因此不用 `pnpm dsh` 包装而直接调 `node`:
 
 ```sh
 pnpm run build   # 必需:web 需要 lib/ 产物与前端 dist/
+node --expose-internals apps/cli/lib/bin.js web --port 3080
+```
+
+构建模式实测本机启动约 1–5s;tsx 源码模式约 15–22s(慢在 tsx 钩子对每次 import 的解析探测,与转译本身无关,tsx 自带磁盘转译缓存)。改 `apps/cli/src/**` 等源码后需重新 `pnpm run build` 才生效;仅当调试 CLI 源码本身时才用源码模式:
+
+```sh
 node --expose-internals --import tsx/esm apps/cli/src/bin.ts web --port 0
 ```
 
@@ -111,5 +123,6 @@ vendor/        vendored Cordis 源码(更新流程见 vendor/README.md)
 |---|---|
 | `pnpm install` 报 `koffi ... invalid conversion` | Android 环境,改用 `pnpm install --ignore-scripts` |
 | 安装时 WARN `Failed to create bin ... lib/bin.js` | `lib/` 未构建,`pnpm run build` 后恢复 |
+| 重启/启动很慢(15s+) | 用了 tsx 源码模式启动;改用构建模式 `node --expose-internals apps/cli/lib/bin.js web`(见上) |
 | `pnpm dsh --profile headless "任务"` 报 key 错 | 未配置 `DEEPSEEK_API_KEY`;e2e 测试同样自跳过 |
 | 想验证环境可用 | `pnpm dsh --version`、`pnpm exec vitest run packages/util/timeout`、`pnpm run build:lib:host` |

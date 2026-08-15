@@ -96,7 +96,7 @@ Full-suite baseline on this machine (13.5 min, `--maxWorkers=4`): 13226 passed /
 
 - HMR/`--expose-internals` (app-boot `hmr-config`/`user-patches`/`app-boot`) — vitest forks run without `--expose-internals`; the node-addon chain that replaces it is absent on Android.
 - Hardcoded `/tmp` (acp-demo) — `/tmp` is root-owned here; tests must use `os.tmpdir()`.
-- Android FS denial semantics (fs-local, tool-fs*, tool-str-replace-editor) — tests assert writes outside the workspace are denied; the sandbox backend is absent so denial paths differ.
+- Android FS denial semantics (fs-local, tool-fs*, tool-str-replace-editor) — tests assert writes outside the workspace are denied; the sandbox backend is absent so denial paths differ. NOTE: their earlier failures were actually the hard-link ban in fs-local's createIfAbsent publish (fixed in the ledger); re-verify against this category only after a sync changes fsio.ts.
 - Missing platform tools (lsp-stdio tsserver, directory-picker zenity/kdialog, claude-code/codex binaries, tool-bash `/usr/bin` PATH assertion, gen-third-party-notices optional payloads).
 - Slow-machine timeouts and clock races (py-types 5s, settings-file 5s, sqlite timestamp compares).
 - Node 26 / mock quirks (credentials PrettyFormatPluginError, agent-presets spyOn target, oxlint-contract debug output).
@@ -149,6 +149,7 @@ Re-apply only what upstream rewrote; everything else survives merges. Verify eac
 | `packages/terminal/terminal-bash/src/config.ts` | default shell `existsSync('/bin/bash') ? '/bin/bash' : 'bash'` | Termux has no `/bin/bash` |
 | `packages/settings/settings-file/src/index.ts` | watcher runs `usePolling` on android | this filesystem delivers inotify events late/lossy for rapid atomic renames; polling reads the one small document reliably |
 | `packages/fs/tool-fs-search/src/search-core.ts` | `resolveRgPath()` falls back to a PATH `rg` when `@vscode/ripgrep` fails to load | VS Code never published an android platform package; Termux supplies `rg` via `pkg install ripgrep` or a statically linked aarch64 musl binary (glibc arm64 binaries do not load on bionic) |
+| `packages/fs/fs-local/src/fsio.ts` | the `createIfAbsent` publish falls back from `link()` to `rename()` on EACCES/EPERM | Android SELinux forbids hard links; this one fix keeps the fs write/edit tools working on Termux |
 
 Test companions travel with the code: `apiproxy/tests/native-path-opener.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`, `settings-file/tests/local.spec.ts` (waitFor raised to 15s), `tool-fs-search/tests/tools.spec.ts` + `rg-path.spec.ts` (resolve via the product resolver instead of a static `@vscode/ripgrep` import), `directory-picker-auto/tests/loader-composition.spec.ts` + `directory-picker-native/tests/native-picker.spec.ts` (assert the android fallback to browse instead of assuming a native tier).
 

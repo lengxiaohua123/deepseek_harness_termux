@@ -752,15 +752,16 @@ describe('writeFileAtomic — temp-file safety', () => {
     expect((await readdir(dir)).filter(name => name.includes('.tmp'))).toEqual([])
   })
 
-  it('maps a non-collision guarded-create publication failure and cleans staging', async () => {
+  it('falls back to rename when the platform forbids hard links', async () => {
     const file = join(dir, 'a.txt')
     const denied = Object.assign(new Error('link denied'), { code: 'EACCES' })
 
-    await expect(writeFileAtomic(file, 'ours', undefined, undefined, {
+    // Android SELinux forbids hard links outright; an EACCES/EPERM link
+    // failure is a rename fallback, not a guarded create failure.
+    await writeFileAtomic(file, 'ours', undefined, undefined, {
       linkFile: async () => { throw denied },
-    }, { displayPath: file })).rejects.toMatchObject({ code: 'FS_IO_ERROR', cause: denied })
-    await expect(stat(file)).rejects.toMatchObject({ code: 'ENOENT' })
-    expect((await readdir(dir)).filter(name => name.includes('.tmp'))).toEqual([])
+    }, { displayPath: file })
+    expect(await readFile(file, 'utf8')).toBe('ours')
   })
 
   it('maps a guarded-create target-inspection failure and cleans staging', async () => {

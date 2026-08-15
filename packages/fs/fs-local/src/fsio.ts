@@ -579,7 +579,21 @@ export async function writeFileAtomic(
       try {
         await linkFile(tempPath, absolutePath)
       } catch (error: unknown) {
-        await throwGuardedCreateFailure(error, absolutePath, createIfAbsent.displayPath, inspectPublicationTarget)
+        // Android SELinux (untrusted_app) forbids hard links outright; rename
+        // is still atomic and loses only the no-clobber race, which
+        // single-process Android runs do not contend for. If the rename also
+        // fails (a genuinely unwritable directory), surface the guarded
+        // create failure as usual.
+        const code = error instanceof Error && 'code' in error ? error.code : undefined
+        if (code === 'EACCES' || code === 'EPERM') {
+          try {
+            await rename(tempPath, absolutePath)
+          } catch {
+            await throwGuardedCreateFailure(error, absolutePath, createIfAbsent.displayPath, inspectPublicationTarget)
+          }
+        } else {
+          await throwGuardedCreateFailure(error, absolutePath, createIfAbsent.displayPath, inspectPublicationTarget)
+        }
       }
     } else if (platform === 'win32' && mode !== undefined) {
       try {

@@ -47,13 +47,22 @@ Both gates run through `tsx` from `node_modules`; they are part of `pnpm run doc
 
 `pnpm` is not preinstalled on this host: `npm install -g pnpm@<version>`, where `<version>` is the `packageManager` field of `package.json` (e.g. `pnpm@11.7.0`).
 
-A plain `pnpm install` fails on android/arm64: `koffi@3.1.1` native compilation errors on the `statx` signature vs bionic headers. `koffi` is used by `fs-local`, `session-persistence-jsonl`, `sandbox-windows-acl`, and `directory-picker-native`. Install with `pnpm install --ignore-scripts` instead; the esbuild and rolldown platform packages are prebuilt and unaffected, so tests, gates, and the build still run.
+A plain `pnpm install` fails on android/arm64 (koffi's `statx` call does not compile against bionic). Install in two steps; the native addons are then genuinely usable, not disabled:
 
 ```sh
 pnpm install --ignore-scripts
+bash scripts/android-native-build.sh   # compiles koffi + node-pty; needs cc/make/python
 ```
 
-Smoke-check the toolchain before trusting gate output:
+Repository-fixed adaptation facts:
+
+- **koffi**: `patches/koffi@3.1.1.patch` (registered in `pnpm-workspace.yaml` `patchedDependencies`) uses `syscall(SYS_statx, ...)` because bionic declares no `statx()` function; `scripts/android-native-build.sh` compiles the patched store copy. After a `pnpm install` that re-materializes the `koffi@3.1.1_patch_hash=*` store dir, rerun the script.
+- **node-pty**: compiled via the local node headers (`--nodedir=$PREFIX`) — node-gyp's downloaded official headers gate `statx` behind the Android NDK branch and fail.
+- **sharp**: runs through the `@img/sharp-wasm32` fallback (root devDependency); no libvips needed.
+- **Platform boundary**: sandbox process isolation needs Landlock (Android kernels return `ENOSYS`) or `bwrap` (absent) — the sandbox is fail-closed by design (explicit `SandboxUnavailableError`, never a silent downgrade).
+- **directory-picker** resolves to the `browse` backend off darwin/win32/linux; the client surface package needs a `tsconfig.base.json` `paths` entry for source runs (a missing entry shows up as `ERR_MODULE_NOT_FOUND` when the auto entry dynamically imports it — check `dsh-client-ui-*` paths when adding client packages).
+
+`esbuild`/`rolldown` platform packages are prebuilt and unaffected. Smoke-check the toolchain before trusting gate output:
 
 ```sh
 pnpm exec vitest run packages/util/timeout   # unit runner

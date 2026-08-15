@@ -51,6 +51,12 @@ const BROWSE = '@deepseek-ai/dsh-host-directory-picker-browse'
 const NATIVE_SURFACE = '@deepseek-ai/dsh-client-ui-directory-picker-native'
 const BROWSE_SURFACE = '@deepseek-ai/dsh-client-ui-directory-picker-browse'
 
+// Termux (platform 'android') has no native tier: the resolver falls back to
+// browse even for an attended loopback host. Every other attended platform
+// mounts native.
+const attendedBackend = process.platform === 'android' ? BROWSE : NATIVE
+const attendedSurface = process.platform === 'android' ? BROWSE_SURFACE : NATIVE_SURFACE
+
 /**
  * Loader-visible stand-in for a client surface package: the surfaces belong to
  * the Client program and publish browser entry points only, so a Host-face spec
@@ -166,12 +172,12 @@ describe('real Loader composition', () => {
       .filter(entry => entry.fiber === undefined && !entry.disabled)
       .map(entry => entry.options.name)
     expect(unloaded).toEqual([])
-    expect(entryNames(ctx)).toContain(NATIVE)
-    expect(entryNames(ctx)).toContain(NATIVE_SURFACE)
-    expect(entryNames(ctx)).not.toContain(BROWSE)
-    expect(entryNames(ctx)).not.toContain(BROWSE_SURFACE)
+    expect(entryNames(ctx)).toContain(attendedBackend)
+    expect(entryNames(ctx)).toContain(attendedSurface)
+    expect(entryNames(ctx)).not.toContain(attendedBackend === NATIVE ? BROWSE : NATIVE)
+    expect(entryNames(ctx)).not.toContain(attendedSurface === NATIVE_SURFACE ? BROWSE_SURFACE : NATIVE_SURFACE)
     const picker = ctx.get('directoryPicker') as DirectoryPicker
-    expect(picker.capability().kind).toBe('native')
+    expect(picker.capability().kind).toBe(attendedBackend === NATIVE ? 'native' : 'browse')
     // The mounted row lives in the Loader's in-memory root tree only — the
     // booted config file must never gain the resolved backend row.
     expect(await readFile(configPath, 'utf8')).not.toContain(NATIVE)
@@ -230,13 +236,13 @@ describe('real Loader composition', () => {
     stubAttendedHost()
     const { ctx, configPath } = await loadComposition('127.0.0.1')
 
-    const backendEntry = [...ctx.loader.entries()].find(entry => entry.options.name === NATIVE)!
+    const backendEntry = [...ctx.loader.entries()].find(entry => entry.options.name === attendedBackend)!
     await ctx.loader.remove(backendEntry.id)
     const autoEntry = [...ctx.loader.entries()].find(entry => entry.options.name === AUTO)!
     renameControl.remainingFailures = 1
     await expect(autoEntry.fiber!.dispose()).resolves.not.toThrow()
-    expect(entryNames(ctx)).not.toContain(NATIVE)
-    expect(entryNames(ctx)).not.toContain(NATIVE_SURFACE)
+    expect(entryNames(ctx)).not.toContain(attendedBackend)
+    expect(entryNames(ctx)).not.toContain(attendedSurface)
     // Same self-dispose persistence as above: let the write land before teardown.
     await expect.poll(async () => await readFile(configPath, 'utf8')).toContain('disabled: true')
     expect(renameControl.injectedFailures).toBe(1)

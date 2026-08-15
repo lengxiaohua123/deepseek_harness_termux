@@ -118,11 +118,17 @@ describe('native directory picker', () => {
 
   it('uses the current process platform when no platform override is supplied', async () => {
     // Deterministic on every host: the win32 tier answers from the dialog,
-    // the POSIX tiers from the command runner.
+    // the POSIX tiers from the command runner. Termux (android) has no native
+    // tier at all — the auto resolver routes it to browse — so the picker
+    // itself rejects there.
     const run = vi.fn<DirectoryPickerRunner>(async () => ({ stdout: '/default/platform\n', stderr: '' }))
     const pickWin32Dialog = async (): Promise<string | null> => 'C:\\default\\platform'
-    const expected = process.platform === 'win32' ? 'C:\\default\\platform' : '/default/platform'
-    await expect(pickNativeDirectory(signal(), { run, pickWin32Dialog })).resolves.toBe(expected)
+    if (process.platform === 'android') {
+      await expect(pickNativeDirectory(signal(), { run, pickWin32Dialog })).rejects.toThrow(/unsupported on android/)
+    } else {
+      const expected = process.platform === 'win32' ? 'C:\\default\\platform' : '/default/platform'
+      await expect(pickNativeDirectory(signal(), { run, pickWin32Dialog })).resolves.toBe(expected)
+    }
   })
 
   it('maps empty command output to cancellation', async () => {

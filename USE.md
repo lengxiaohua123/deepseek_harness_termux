@@ -89,6 +89,12 @@ pnpm dsh plugin --profile <name> <pnpm args>     # 管理某 profile 的插件
 
 ### Android/Termux 上运行 web UI
 
+新手机一键装机(工具链+仓库+依赖+原生编译+构建+zsh 函数+冒烟验证,幂等):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lengxiaohua123/deepseek_harness_termux/adapt/android-termux/scripts/setup-termux.sh | bash
+```
+
 `--expose-internals` 是硬性要求:Loader 的 `ModuleLoader.fromInternal()` 需要它访问 Node 内部 ESM loader 来解析 workspace 插件(`node-addon-require-builtin` 原生链在 Android 上无预编译产物,回退失败)。因此不用 `pnpm dsh` 包装而直接调 `node`:
 
 ```sh

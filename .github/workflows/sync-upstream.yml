@@ -1,0 +1,52 @@
+# Mirror upstream master into this repository's master and re-push every branch.
+#
+# IMPORTANT: GitHub runs `schedule` workflows only from the DEFAULT branch.
+# The master branch is force-mirrored to upstream, so the workflow file would
+# vanish from it after the first sync. Set the repository's default branch to
+# `adapt/android-termux` (which owns this file) for the schedule to keep
+# firing; `workflow_dispatch` still works from any branch.
+#
+# First run: push all local branches to this repository once
+# (`git push origin --all`), then trigger this workflow manually.
+name: sync-upstream
+
+on:
+  schedule:
+    - cron: '17 3 * * *' # daily 03:17 UTC; adjust as needed
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout master with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: master
+
+      - name: Fetch every remote branch
+        run: git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Fetch upstream master
+        run: |
+          git remote add upstream https://github.com/deepseek-ai/deepseek-harness.git
+          git fetch upstream master
+
+      - name: Mirror upstream master into master
+        run: git checkout -B master upstream/master
+
+      - name: Force-push master
+        run: git push --force origin master
+
+      - name: Re-push all branches
+        run: |
+          git for-each-ref --format='%(refname:short)' refs/remotes/origin/ \
+            | grep -v '^origin/HEAD$' \
+            | sed 's#^origin/##' \
+            | while read -r branch; do
+                git push origin "refs/remotes/origin/$branch:refs/heads/$branch"
+              done

@@ -8,6 +8,15 @@
 - `adapt/android-termux`:本机 Android 适配的全部内容(文档、skill、session 修复、依赖与 patch),日常在此分支工作与运行。
 - `feat/android-native-deps`:仅依赖与 patch(已并入 `adapt/android-termux`,保留为独立依赖集)。
 
+## 远程与上游同步 CI
+
+- 本仓库 GitHub 远程:`https://github.com/lengxiaohua123/deepseek_harness_termux`;上游为 `deepseek-ai/deepseek-harness`。
+- CI(`.github/workflows/sync-upstream.yml`):定时把上游 `master` 镜像到本仓库 `master`(force),并重推所有分支。手动触发:`workflow_dispatch`。
+- 首次使用:
+  1. 本地推送全部分支:`git push origin --all`(origin 需指向本仓库)。
+  2. 在 GitHub 仓库设置中把**默认分支设为 `adapt/android-termux`**——`schedule` 只从默认分支读取 workflow,而 master 会被镜像覆盖,不设默认分支则定时同步失效(手动触发仍可用)。
+  3. 手动运行一次 CI(`Actions` 页 → `sync-upstream` → Run workflow)。
+
 项目是插件化 agent harness(基于 vendored Cordis):`pnpm dsh` 是产品启动器(入口 `apps/cli/src/bin.ts`)。
 
 ## 环境与安装

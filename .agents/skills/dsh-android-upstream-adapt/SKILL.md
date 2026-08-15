@@ -148,7 +148,7 @@ Re-apply only what upstream rewrote; everything else survives merges. Verify eac
 | `packages/subprocess/subprocess-local/src/process-inspector.ts` | `createProcessInspector` routes `'android'` to `LinuxProcessInspector` | Termux reports platform `'android'`; the old code threw, breaking every terminal |
 | `packages/subprocess/subprocess-local/src/spawn.ts` | group-liveness check includes `'android'` | keeps tree teardown equal to Linux |
 | `packages/terminal/terminal-bash/src/config.ts` | default shell `existsSync('/bin/bash') ? '/bin/bash' : 'bash'` | Termux has no `/bin/bash` |
-| `packages/settings/settings-file/src/index.ts` | watcher runs `usePolling` on android | this filesystem delivers inotify events late/lossy for rapid atomic renames; polling reads the one small document reliably |
+| `packages/settings/settings-file/src/index.ts` | watcher runs `usePolling` on android or linux+arm64 | this filesystem delivers inotify events late/lossy for rapid atomic renames; polling reads the one small document reliably |
 | `packages/fs/tool-fs-search/src/search-core.ts` | `resolveRgPath()` falls back to a PATH `rg` when `@vscode/ripgrep` fails to load | VS Code never published an android platform package; Termux supplies `rg` via `pkg install ripgrep` or a statically linked aarch64 musl binary (glibc arm64 binaries do not load on bionic) |
 | `packages/fs/fs-local/src/fsio.ts` | the `createIfAbsent` publish falls back from `link()` to `rename()` on EACCES/EPERM | Android SELinux forbids hard links; this one fix keeps the fs write/edit tools working on Termux |
 

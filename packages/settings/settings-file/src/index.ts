@@ -239,8 +239,10 @@ export class FileSettingsProvider extends SettingsProvider {
         ignoreInitial: true,
         // Android's filesystem delivers inotify events late and lossy for rapid
         // atomic renames (two sequential writeFileAtomic replaces miss the
-        // second event); polling reads the one small document directly.
-        usePolling: process.platform === 'android',
+        // second event); polling reads the one small document directly. Match
+        // both platform spellings: Termux node builds report either 'android'
+        // or 'linux' on arm64, never assume one.
+        usePolling: process.platform === 'android' || (process.platform === 'linux' && process.arch === 'arm64'),
         awaitWriteFinish: {
           stabilityThreshold: this.spec.debounceMs,
           pollInterval: Math.max(1, Math.min(this.spec.debounceMs, 10)),

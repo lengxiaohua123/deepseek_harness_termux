@@ -92,6 +92,15 @@ All three packages' suites are green on this machine (attachment, subprocess, te
 - `subprocess-local/tests/process-exit.spec.ts` — failed on the android platform throw in `createProcessInspector`, not on sandbox cleanup.
 - `terminal-bash/tests/local.spec.ts` — failed on the same inspector throw plus a test that hardcoded `/bin/bash`; both fixed.
 
+Full-suite baseline on this machine (13.5 min, `--maxWorkers=4`): 13226 passed / 71 failed / 111 skipped (13408 tests, 811 files). The 71 failures are all environmental and none touch the adapted packages — expected-failure categories, re-verify against this list after each sync instead of chasing them:
+
+- HMR/`--expose-internals` (app-boot `hmr-config`/`user-patches`/`app-boot`) — vitest forks run without `--expose-internals`; the node-addon chain that replaces it is absent on Android.
+- Hardcoded `/tmp` (acp-demo) — `/tmp` is root-owned here; tests must use `os.tmpdir()`.
+- Android FS denial semantics (fs-local, tool-fs*, tool-str-replace-editor) — tests assert writes outside the workspace are denied; the sandbox backend is absent so denial paths differ.
+- Missing platform tools (lsp-stdio tsserver, directory-picker zenity/kdialog, claude-code/codex binaries, tool-bash `/usr/bin` PATH assertion, gen-third-party-notices optional payloads).
+- Slow-machine timeouts and clock races (py-types 5s, settings-file 5s, sqlite timestamp compares).
+- Node 26 / mock quirks (credentials PrettyFormatPluginError, agent-presets spyOn target, oxlint-contract debug output).
+
 Reliable suites for the adaptation surface: `attachment-local/tests/image.spec.ts`, `subprocess-local/tests/terminal.spec.ts`, `subprocess-local/tests/spawn.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`.
 
 ## 6. Boot the web server

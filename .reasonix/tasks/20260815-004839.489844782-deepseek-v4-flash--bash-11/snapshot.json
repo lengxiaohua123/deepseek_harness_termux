@@ -1,0 +1,1 @@
+{"schema_version":1,"task_id":"20260815-004839.489844782-deepseek-v4-flash--bash-11","job_id":"bash-11","session_id":"20260815-004839.489844782-deepseek-v4-flash","state":"failed","runtime_state":"exited","runtime_lease_until":"0001-01-01T00:00:00Z","version":5,"created_at":"2026-08-15T01:14:49.357305642Z","updated_at":"2026-08-15T01:15:07.55802652Z","error_code":"job_failed"}

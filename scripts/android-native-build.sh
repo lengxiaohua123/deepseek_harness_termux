@@ -26,7 +26,7 @@ fi
 # node-pty: no android prebuild artifact, so prebuild.js falls through to
 # node-gyp. Use the local node headers via --nodedir; the downloaded official
 # headers gate statx behind the Android NDK and fail on Termux.
-NPTY_MOD="$(ls -d "$ROOT"/node_modules/.pnpm/node-pty@1.1.0*/node_modules/node-pty | head -1)"
+NPTY_MOD="$(ls -d "$ROOT"/node_modules/.pnpm/node-pty@1.2*/node_modules/node-pty | head -1)"
 echo "building node-pty: $NPTY_MOD"
 NG="$(npm root -g)/npm/node_modules/node-gyp/bin/node-gyp.js"
 (cd "$NPTY_MOD" && node scripts/prebuild.js || node "$NG" rebuild --nodedir="$PREFIX")

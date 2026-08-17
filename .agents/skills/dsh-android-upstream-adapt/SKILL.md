@@ -36,7 +36,13 @@ Conflicts concentrate in the adaptation surfaces listed in step 1; expect them t
 git log --oneline origin/master..HEAD                # this branch's own commits
 git diff origin/master...HEAD --stat                 # what the merge pulled in
 git log origin/master.. -- packages/ vendor/ apps/   # which areas moved
+# Platform-branch scan: every incoming platform check must route android
+# correctly (win32 special-cases are fine; a bare === 'linux' branch that
+# android would MISS is not).
+git diff <pre-merge-HEAD>..HEAD -- '*.ts' '*.tsx' | grep -nE "process\.platform|=== *'linux'|!== *'linux'|os\.platform\(|platform === *'android'"
 ```
+
+Every `=== 'linux'` hit needs a verdict: either android falls through to the correct default, or the branch needs the dual-value match (`android` OR `linux && arm64`). `=== 'darwin'`/`=== 'win32'` branches are safe — android takes the POSIX path.
 
 High-risk adaptation surfaces. Upstream rewrites here force re-application — the complete file-by-file ledger with reasons is the "Adaptation ledger" section below:
 

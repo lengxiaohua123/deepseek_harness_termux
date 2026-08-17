@@ -98,15 +98,15 @@ All three packages' suites are green on this machine (attachment, subprocess, te
 - `subprocess-local/tests/process-exit.spec.ts` — failed on the android platform throw in `createProcessInspector`, not on sandbox cleanup.
 - `terminal-bash/tests/local.spec.ts` — failed on the same inspector throw plus a test that hardcoded `/bin/bash`; both fixed.
 
-Full-suite baseline on this machine (13 min, `--maxWorkers=4`): 13376 passed / 28 failed / 111 skipped (13515 tests, 811 files). The 28 are all environmental or load flakes — none touch the adapted packages. Re-verify against this list after each sync instead of chasing them:
+Full-suite baseline after the 2026-08-18 rc.7 sync (14.5 min, `--maxWorkers=4`): 13483 passed / 25 failed / 111 skipped (13619 tests, 816 files). All 25 are environmental or load flakes — none touch the adapted packages:
 
-- oxlint-contract (11) and install-lefthook (4) — tooling version / hard-link install; lefthook is unused on Termux.
-- subagent-claude-code / subagent-codex real-product (7) — need the external CLIs and their API keys.
-- sqlite ×2 — revision-timestamp race and inspect-API behavior on a slow machine; semantics-sensitive, left alone.
-- lsp-stdio, process-exit, acp-snapshot (3) — timing flakes: each passes in isolation, fails only under full-load memory pressure.
-- credentials ×1 — Android filesystem does not reflect chmod(600) the way the test asserts.
-- tool-bash was fixed: the workdir tests assumed `/usr` exists (it does not on Termux); they now use real temp dirs.
+- oxlint-contract and install-lefthook — tooling version / hard-link install; lefthook is unused on Termux.
+- subagent-claude-code / subagent-codex real-product — need the external CLIs and their API keys.
+- sqlite ×2 — revision-timestamp race and inspect-API behavior; semantics-sensitive, left alone.
+- process-exit, acp-snapshot — timing flakes, pass in isolation.
+- credentials ×1 — Android filesystem does not reflect chmod(600).
 - gen-third-party-notices ×1 — optional Claude SDK payload not installed.
+- lsp-stdio and tool-bash are green (lsp is a load flake that passed this run; tool-bash was fixed with real temp dirs).
 
 Reliable suites for the adaptation surface: `attachment-local/tests/image.spec.ts`, `subprocess-local/tests/terminal.spec.ts`, `subprocess-local/tests/spawn.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`.
 

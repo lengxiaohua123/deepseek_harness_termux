@@ -160,7 +160,7 @@ Test companions travel with the code: `apiproxy/tests/native-path-opener.spec.ts
 |---|---|---|
 | `patches/koffi@3.1.1.patch` + matching `pnpm-workspace.yaml` `patchedDependencies` entry | koffi statx call → raw `syscall(SYS_statx, ...)` | bionic headers do not declare statx; pinned to koffi@3.1.1 |
 | `package.json` devDependency `@img/sharp-wasm32` | wasm fallback for sharp | Android has no libvips; arch-independent |
-| `scripts/android-native-build.sh` | compiles koffi + node-pty locally | no android-arm64 prebuilds; node-pty needs `--nodedir=$PREFIX` |
+| `scripts/android-native-build.sh` | compiles koffi + node-pty locally; the node-pty `.pnpm` glob tracks the major (currently `node-pty@1.2*` — update it on major bumps) | no android-arm64 prebuilds; node-pty needs `--nodedir=$PREFIX` |
 | `pnpm-lock.yaml` | lockfile | regenerate via `pnpm install --ignore-scripts` |
 
 Upstream-owned, do not touch: `patches/node-pty@1.1.0.patch` (upstream supplies it).

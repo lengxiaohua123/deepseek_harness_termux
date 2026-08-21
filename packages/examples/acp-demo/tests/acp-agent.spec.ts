@@ -45,7 +45,7 @@ async function isolatedSkillsConfig(catalogDescriptionMaxLength?: number): Promi
 }
 
 async function composePrefix(ctx: Context): Promise<Message[]> {
-  const agent = ctx.agentLoop.create(SessionId(`acp-demo-prefix-${randomUUID()}`), {}, { cwd: tmpdir() })
+  const agent = ctx.agentLoop.create(SessionId(`acp-demo-prefix-${randomUUID()}`), {}, { cwd: '/tmp' })
   const signal = new AbortController().signal
   const decision = await agentEvents(ctx, agent).waterfall(
     'agent/pre-step', { messages: [], turn: 1, step: 1, signal },
@@ -87,7 +87,7 @@ describe('dsh-acp-demo composition', () => {
       provider: 'mock',
       model: 'mock',
       persona: 'hi',
-      persistenceRoot: join(tmpdir(), 'dsh-acp-demo-test'),
+      persistenceRoot: await mkdtemp(join(tmpdir(), 'dsh-acp-demo-test-')),
       persistenceCompression: 'none',
       skills: await isolatedSkillsConfig(),
       workspaceContext: false,
@@ -143,7 +143,7 @@ describe('dsh-acp-demo composition', () => {
       provider: 'mock',
       model: 'mock',
       persona: 'hi',
-      persistenceRoot: join(tmpdir(), 'dsh-acp-demo-workspace-context'),
+      persistenceRoot: await mkdtemp(join(tmpdir(), 'dsh-acp-demo-workspace-context-')),
       workspaceContext: false,
     })
     expect(ctx.get('agents')).toBeDefined()
@@ -174,7 +174,7 @@ describe('dsh-acp-demo composition', () => {
       provider: 'mock',
       model: 'mock',
       maxParallelToolCalls: 3,
-      persistenceRoot: join(tmpdir(), 'dsh-acp-demo-test-parallel'),
+      persistenceRoot: await mkdtemp(join(tmpdir(), 'dsh-acp-demo-test-parallel-')),
       skills: await isolatedSkillsConfig(),
       workspaceContext: false,
     })
@@ -232,7 +232,7 @@ describe('dsh-acp-demo composition', () => {
       provider: 'mock',
       model: 'mock',
       toolOrder: ['zulu', TOOL_ORDER_REST],
-      persistenceRoot: join(tmpdir(), 'dsh-acp-demo-test-tool-order'),
+      persistenceRoot: await mkdtemp(join(tmpdir(), 'dsh-acp-demo-test-tool-order-')),
       workspaceContext: false,
     })
     // The bundle's own bash tools pend on the absent `ctx.shell` executor in

@@ -19,6 +19,7 @@
  * @module @deepseek-ai/dsh-tool-fs-search/search-core
  */
 
+import { existsSync } from 'node:fs'
 import { isAbsolute, relative, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
@@ -158,12 +159,11 @@ let rgPathPromise: Promise<string> | undefined
 /**
  * The packaged ripgrep binary path, resolved lazily once per process.
  *
- * `@vscode/ripgrep` resolves its platform package (`@vscode/ripgrep-<platform>
- * -<arch>`) at module evaluation, so a static import would turn a missing or
- * corrupt platform package (`pnpm install --omit=optional`, partial install)
- * into a failure of the whole Loader composition. Resolving at the call
- * boundary keeps that failure at the first search call as `SEARCH_FAILED` —
- * the package's documented no-load-time-probe contract.
+ * A single-file runtime uses the executable's `-rg` sidecar because a native
+ * helper cannot be spawned from pkg's virtual filesystem. Node-mode builds
+ * fall back to the platform package selected by `@vscode/ripgrep`. Resolving
+ * at the call boundary keeps a missing or corrupt binary at the first search
+ * call as `SEARCH_FAILED`, rather than failing the Loader composition.
  *
  * Android/Termux has no `@vscode/ripgrep` platform package (VS Code never
  * published one), so the resolution falls back to a PATH `rg` — Termux's
@@ -175,7 +175,11 @@ let rgPathPromise: Promise<string> | undefined
  *   when no platform package exists.
  */
 export function resolveRgPath(): Promise<string> {
-  rgPathPromise ??= import('@vscode/ripgrep').then(module => module.rgPath).catch(() => 'rg')
+  rgPathPromise ??= Promise.resolve().then(async () => {
+    const executableSidecar = `${process.execPath}-rg`
+    if ('pkg' in process && existsSync(executableSidecar)) return executableSidecar
+    return (await import('@vscode/ripgrep')).rgPath
+  }).catch(() => 'rg')
   return rgPathPromise
 }
 

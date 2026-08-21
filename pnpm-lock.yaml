@@ -7869,7 +7869,7 @@ importers:
     dependencies:
       koffi:
         specifier: ^3.1.0
-        version: 3.1.1
+        version: 3.1.1(patch_hash=00ac28b7de813c7ef4d9f8d5a8dd92d06c021a49cb6e0528f97b76a5f128eef2)
       node-pty:
         specifier: 1.2.0-beta.15
         version: 1.2.0-beta.15(patch_hash=b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0)

@@ -1,6 +1,10 @@
+import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { Config } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
 import { resolveConfig, validateConfig } from '@deepseek-ai/dsh-terminal-bash/src/config.ts'
+
+// Mirrors the config default: /bin/bash when present, else a PATH-resolved bash (Termux has no /bin/bash).
+const expectedBash = existsSync('/bin/bash') ? '/bin/bash' : 'bash'
 
 function config(overrides: Partial<Config> = {}): Config {
   return {
@@ -35,7 +39,7 @@ describe('terminal-bash dialect resolution', () => {
   it('defaults bash argv to the interactive profile-free form', () => {
     const { shellPath, shellArgs, shellDialect } = resolveConfig({ backendType: 'shell', rows: 24, cols: 80 })
     expect(shellDialect).toBe('bash')
-    expect(shellPath).toBe('/bin/bash')
+    expect(shellPath).toBe(expectedBash)
     expect(shellArgs).toEqual(['--noprofile', '--norc', '-i'])
   })
 
@@ -61,7 +65,7 @@ describe('terminal-bash dialect resolution', () => {
     const resolved = resolveConfig({
       backendType: 'shell', shellDialect: 'bash', shellPath: '', shellArgs: [], rows: 24, cols: 80,
     })
-    expect(resolved.shellPath).toBe('/bin/bash')
+    expect(resolved.shellPath).toBe(expectedBash)
     expect(resolved.shellArgs).toEqual(['--noprofile', '--norc', '-i'])
   })
 

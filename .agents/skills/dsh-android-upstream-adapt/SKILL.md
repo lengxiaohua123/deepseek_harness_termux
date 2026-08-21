@@ -106,6 +106,7 @@ Full-suite baseline after the 2026-08-18 rc.7 sync (14.5 min, `--maxWorkers=4`):
 - process-exit, acp-snapshot — timing flakes, pass in isolation.
 - credentials ×1 — Android filesystem does not reflect chmod(600).
 - gen-third-party-notices ×1 — optional Claude SDK payload not installed.
+- attachment `normalization.spec.ts` ×1 — sharp-wasm32 does not render SVG `<text>` (no font support), so the antialiased-text fixture is blank white; genuine wasm32 limitation, not a regression.
 - lsp-stdio and tool-bash are green (lsp is a load flake that passed this run; tool-bash was fixed with real temp dirs).
 
 Reliable suites for the adaptation surface: `attachment-local/tests/image.spec.ts`, `subprocess-local/tests/terminal.spec.ts`, `subprocess-local/tests/spawn.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`.

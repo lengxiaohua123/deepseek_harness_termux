@@ -70,13 +70,21 @@ Version bumps of `koffi` or `node-pty` break the pinned patches; update them tog
 
 Toolchain prereqs for `scripts/android-native-build.sh`: `cc`, `make`, `python3`; node-pty builds with `--nodedir=$PREFIX` because the official downloaded headers gate statx behind the Android NDK and fail on Termux.
 
-## 3. Build with npm, not pnpm
+## 3. Build — full build on big merges
+
+For a routine patch, build just what changed:
 
 ```sh
 npm run build:lib:host    # tsc -b tsconfig.host.json && tsdown --env.DSH_BUILD_FACE host
 ```
 
-Why npm: `pnpm run` first runs `verify-deps-before-run`, which triggers `pnpm install`, whose lefthook postinstall always fails on Android and aborts the whole command. `npm run` skips that check. After a client-package change also run `npm run build:lib:client`; after a frontend change run the web build separately (`apps/web`).
+For a LARGE merge (hundreds of commits) that touches client packages, run the FULL build — a host-only build leaves client packages (ui-renderer, ui-attachment, …) stale or missing and the server fails to boot:
+
+```sh
+npm_config_verify_deps_before_run=false pnpm run build   # full: host + client + web, skipping pnpm's auto-install
+```
+
+Why the env flag instead of `npm run build:lib:host`: `pnpm run build` normally runs `verify-deps-before-run`, which triggers `pnpm install`, whose lefthook postinstall always fails on Android and aborts the whole command. `npm_config_verify_deps_before_run=false` disables that pre-run install check so the full build proceeds. A full build also works around stale `tsbuildinfo` incremental caches: on big refactor merges the incremental tsc can keep pre-refactor content in `lib/types` and mis-bundle a server entry as React (node then hits `.css`) — a clean full build reclassifies it.
 
 ## 4. Typecheck the changed packages
 

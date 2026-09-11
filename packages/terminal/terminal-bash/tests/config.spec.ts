@@ -33,6 +33,7 @@ describe('terminal-bash config', () => {
     expect(() => { validateConfig(config({ handoffGraceMs: 9, pollIntervalMs: 10 })) }).toThrow('handoffGraceMs must be at least pollIntervalMs')
     expect(() => { validateConfig(config({ handoffGraceMs: 10, pollIntervalMs: 10 })) }).not.toThrow()
   })
+
 })
 
 describe('terminal-bash dialect resolution', () => {

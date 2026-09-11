@@ -14,7 +14,7 @@ PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 # koffi: patches/koffi@3.1.1.patch makes the statx() call use the raw syscall
 # on bionic (the function is not declared in Termux headers). Compile the
 # patched store copy.
-KOFFI_MOD="$(ls -d "$ROOT"/node_modules/.pnpm/koffi@3.1.1_patch_hash=*/node_modules/koffi 2>/dev/null | head -1 || true)"
+KOFFI_MOD="$(ls -d "$ROOT"/node_modules/.pnpm/koffi@*_patch_hash=*/node_modules/koffi 2>/dev/null | head -1 || true)"
 if [ -n "$KOFFI_MOD" ]; then
   echo "building koffi: $KOFFI_MOD"
   (cd "$KOFFI_MOD" && node ./cnoke.cjs -P . -D src/koffi --prebuild --release)
@@ -26,7 +26,7 @@ fi
 # node-pty: no android prebuild artifact, so prebuild.js falls through to
 # node-gyp. Use the local node headers via --nodedir; the downloaded official
 # headers gate statx behind the Android NDK and fail on Termux.
-NPTY_MOD="$(ls -d "$ROOT"/node_modules/.pnpm/node-pty@1.2*/node_modules/node-pty | head -1)"
+NPTY_MOD="$(ls -d "$ROOT"/node_modules/.pnpm/node-pty@*/node_modules/node-pty | head -1)"
 echo "building node-pty: $NPTY_MOD"
 NG="$(npm root -g)/npm/node_modules/node-gyp/bin/node-gyp.js"
 (cd "$NPTY_MOD" && node scripts/prebuild.js || node "$NG" rebuild --nodedir="$PREFIX")

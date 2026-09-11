@@ -224,7 +224,7 @@ export function nativeFileManager(internals: PathOpenerInternals = {}): NativeFi
   const platform = internals.platform ?? process.platform
   if (platform === 'darwin') return 'finder'
   if (platform === 'win32' || (platform === 'linux' && isWsl(internals))) return 'explorer'
-  return platform === 'linux' ? 'directory' : null
+  return platform === 'linux' || platform === 'android' ? 'directory' : null
 }
 
 /**
@@ -265,7 +265,8 @@ export async function revealNativePath(
     return
   }
   if (manager === 'directory') {
-    await run('xdg-open', [dirname(path)], signal)
+    // Termux reveals through the Android intent system (termux-open), not a Linux desktop.
+    await run(platform === 'android' ? 'termux-open' : 'xdg-open', [dirname(path)], signal)
     return
   }
   throw new Error(`native file manager is unsupported on ${platform}`)

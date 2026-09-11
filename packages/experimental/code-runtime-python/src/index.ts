@@ -438,7 +438,7 @@ function messageOf(error: unknown): string {
  */
 export function readProcessStart(pid: number): string | undefined {
   /* v8 ignore next -- one arm per platform: the Linux coverage lane always takes the read path, and Darwin always this one. */
-  if (process.platform !== 'linux') return undefined
+  if (process.platform !== 'linux' && process.platform !== 'android') return undefined
   try {
     const stat = readFileSync(`/proc/${String(pid)}/stat`, 'utf8')
     const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')

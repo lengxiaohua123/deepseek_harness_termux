@@ -747,7 +747,7 @@ describe('PythonCodeRuntime — process identity', () => {
     // that the reading is stable for one process and absent for a pid that
     // cannot be read.
     const own = readProcessStart(process.pid)
-    if (process.platform === 'linux') {
+    if (process.platform === 'linux' || process.platform === 'android') {
       // Same process, two reads: the identity must be stable, or the guard would
       // refuse to signal its own live group.
       expect(own).toBeDefined()

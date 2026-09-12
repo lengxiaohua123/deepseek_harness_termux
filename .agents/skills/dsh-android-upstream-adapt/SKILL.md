@@ -39,10 +39,20 @@ git log origin/master.. -- packages/ vendor/ apps/   # which areas moved
 # Platform-branch scan: every incoming platform check must route android
 # correctly (win32 special-cases are fine; a bare === 'linux' branch that
 # android would MISS is not).
-git diff <pre-merge-HEAD>..HEAD -- '*.ts' '*.tsx' | grep -nE "process\.platform|=== *'linux'|!== *'linux'|os\.platform\(|platform === *'android'"
+grep -rnE "platform *[!=]== *'linux'|=== *'linux'" packages --include=*.ts | grep -v /lib/ | grep -v /tests/
 ```
 
-Every `=== 'linux'` hit needs a verdict: either android falls through to the correct default, or the branch needs the dual-value match (`android` OR `linux && arm64`). `=== 'darwin'`/`=== 'win32'` branches are safe — android takes the POSIX path.
+Run the scan REPO-WIDE, not only over the merge diff: a renamed or newly split file carries branches the diff view hides behind a rename, and only the whole-tree list lets you confirm each site's verdict. Never scope it with a `git grep` pathspec glob — `git grep -nE "<pattern>" -- 'packages/*/*/src/**/*.ts'` silently matches almost nothing because GitHub-style `**/` there does not match a file directly under `src/` (it misses every `src/index.ts`, i.e. most packages' main entry). Use `grep -rn` or a plain `-- 'packages/'` pathspec.
+
+Every `=== 'linux'` hit needs a verdict: either android falls through to the correct default, or the branch needs the dual-value match (`android` OR `linux && arm64`). `=== 'darwin'`/`=== 'win32'` branches are safe — android takes the POSIX path. Current verdicts, so a re-check only has to look for new sites:
+
+| Site | Verdict |
+| --- | --- |
+| `subprocess-local/src/index.ts` `platform === 'linux'` (containment mode) | Correct as-is. The `linux-scope` probe requires `systemctl --user`/`systemd-run --user`, absent on Termux, so android would land in `fallback` anyway; excluding android also skips two `spawnSync` probes. |
+| `util/native-command/src/path-opener.ts` `platform === 'linux'` sites | Correct as-is; the remaining ones are `$BROWSER`/WSL semantics. Android has its own `termux-open` branches for open and reveal. |
+| `host/directory-picker-auto` `platform !== 'linux'`, `directory-picker-native` `platform === 'linux'` | Correct as-is. Android has no zenity/kdialog, so auto picks `browse`; forcing `native` throws a loud unsupported-platform error. |
+| `host/open-in-app` `specFor()`/`icons.ts` `linux` | Correct as-is. The catalog is desktop-app-specific; generic opening goes through the path opener's android branch. |
+| `experimental/code-runtime-python/src/index.ts` | Already accepts android alongside linux. |
 
 High-risk adaptation surfaces. Upstream rewrites here force re-application — the complete file-by-file ledger with reasons is the "Adaptation ledger" section below:
 
@@ -166,7 +176,9 @@ Re-apply only what upstream rewrote; everything else survives merges. Verify eac
 | `packages/fs/tool-fs-search/src/search-core.ts` | `resolveRgPath()` falls back to a PATH `rg` when `@vscode/ripgrep` fails to load | VS Code never published an android platform package; Termux supplies `rg` via `pkg install ripgrep` or a statically linked aarch64 musl binary (glibc arm64 binaries do not load on bionic) |
 | `packages/fs/fs-local/src/fsio.ts` | the `createIfAbsent` publish falls back from `link()` to `rename()` on EACCES/EPERM | Android SELinux forbids hard links; this one fix keeps the fs write/edit tools working on Termux |
 
-Test companions travel with the code: `apiproxy/tests/native-path-opener.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`, `settings-file/tests/local.spec.ts` (waitFor raised to 15s), `tool-fs-search/tests/tools.spec.ts` + `rg-path.spec.ts` (resolve via the product resolver instead of a static `@vscode/ripgrep` import), `directory-picker-auto/tests/loader-composition.spec.ts` + `directory-picker-native/tests/native-picker.spec.ts` (assert the android fallback to browse instead of assuming a native tier).
+Test companions travel with the code: `apiproxy/tests/native-path-opener.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`, `settings-file/tests/local.spec.ts` (waitFor raised to 15s), `tool-fs-search/tests/tools.spec.ts` + `rg-path.spec.ts` (resolve via the product resolver instead of a static `@vscode/ripgrep` import), `directory-picker-auto/tests/loader-composition.spec.ts` + `directory-picker-native/tests/native-picker.spec.ts` (assert the android fallback to browse instead of assuming a native tier — this one has several assertions, so re-apply it as a whole file: the attended cases must use the `attendedBackend`/`attendedSurface` constants in the `find(...)` and `not.toContain(...)` calls too, not only in the mount assertions, or the later cases dereference an entry that does not exist on android), `attachment-local/tests/file-store.spec.ts` (guard the hard-link inode assertion with a `link(2)` capability probe, since the store's rename fallback publishes a copy).
+
+Two traps when re-applying a companion by hand, both hit during the 0.1.5-rc.2 sync: pasting the new `it(...)` inside an existing test body instead of after it (vitest then fails collection with `Calling the test function inside another test function is not allowed`), and adapting only the first assertion of a repeated pattern. Run the companion file itself right after re-applying it — it is the only signal for both.
 
 ### Dependency and patch layer (upstream bumps the dependency → re-apply)
 
@@ -219,3 +231,5 @@ Problems observed on this machine, with the verified fix. Symptoms below the fir
 | Suites fail to LOAD with `Cannot find package '<pkg>'` right after a sync | Upstream added a new dependency (even when versions of existing ones look unchanged). Run `CI=true pnpm install --ignore-scripts` to sync node_modules, then re-run tests |
 | Build reports spurious TS errors right after a sync | Do not run `npm run build:lib:host` concurrently with `pnpm install` — both mutate node_modules and race. Run install first, then build |
 | New upstream tests hardcode a default we overrode (e.g. `/bin/bash` in the new dialect tests) | When a default-resolution fix (existsSync fallback) collides with an upstream test that asserts the literal old default, update that test to expect the resolved value (`existsSync('/bin/bash') ? '/bin/bash' : 'bash'`) — same pattern as terminal-bash config |
+| A spec fails `Calling the test function inside another test function is not allowed` | A re-applied test companion was pasted into the middle of an existing test body instead of after it. Re-insert the added `it(...)` block at the end of the enclosing `describe`, next to the sibling test it belongs with |
+| A platform scan reports clean, but a bare `=== 'linux'` branch is later found by hand | The scan used a `git grep` pathspec glob (`'packages/*/*/src/**/*.ts'`), which misses files directly under `src/`; re-run it with `grep -rn` as step 1 shows |

@@ -65,13 +65,25 @@ function rootIdentity(path: string, stats: Stats): string {
 }
 
 /**
+ * Whether ancestor write classes are the protection boundary on this host.
+ *
+ * Android guards the app-private tree with uid isolation and SELinux, not with
+ * directory modes: `/data` and `/data/data` are `771` owned by the system uid,
+ * so the write-class test below rejects every root and the startup sweep never
+ * runs. Termux reports `android`, and a Termux node built for a generic target
+ * reports `linux`, so the environment is recognised by either signal.
+ */
+const ANCESTRY_MODES_DECIDE = process.platform !== 'android'
+  && process.env.PREFIX?.includes('com.termux') !== true
+
+/**
  * Check that no ancestor permits another local OS user to replace the selected
  * child. A sticky writable ancestor is safe because the child is owned by the
  * current user; this admits normal per-process roots below `/tmp`.
  */
 async function hasProtectedAncestors(path: string): Promise<boolean> {
-  /* v8 ignore next -- POSIX ancestry checks have no Windows ACL equivalent. */
-  if (process.platform === 'win32' || process.geteuid === undefined) return true
+  /* v8 ignore next -- Windows and Android protect the root through ACLs or the OS sandbox rather than POSIX ancestor modes. */
+  if (!ANCESTRY_MODES_DECIDE || process.geteuid === undefined) return true
   /* v8 ignore start -- Windows takes the return above; POSIX tests exercise
      the ancestor ownership and mode policy. */
   const currentUid = process.geteuid()

@@ -29,6 +29,14 @@ import LocalSpillStore, {
   sweepSpillRoots,
 } from '@deepseek-ai/dsh-spill-local'
 import type { SweepRoot } from '@deepseek-ai/dsh-spill-local'
+
+/**
+ * Whether the platform guards this tree with an OS sandbox rather than POSIX
+ * ancestor modes, so the sweep accepts every root whose mode bits look unsafe.
+ * Android's `/data` and `/data/data` are `771` owned by the system uid, and
+ * Termux reports either `android` or `linux`.
+ */
+const OS_PROTECTED_TREE = process.platform === 'android' || process.env.PREFIX?.includes('com.termux') === true
 import { gatherSweepRoots } from '../src/cleanup.ts'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -484,7 +492,7 @@ describe('startup cleanup sweep', () => {
   })
 
   it('skips a root that another POSIX user could replace', async () => {
-    if (process.platform === 'win32') return
+    if (process.platform === 'win32' || OS_PROTECTED_TREE) return
     const unsafeParent = join(root, 'unsafe-parent')
     const unsafeRoot = join(unsafeParent, 'configured')
     mkdirSync(unsafeRoot, { recursive: true, mode: 0o700 })
@@ -497,6 +505,23 @@ describe('startup cleanup sweep', () => {
     expect(roots).toEqual([])
     expect(existsSync(old)).toBe(true)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('skipped unsafe root'))
+  })
+
+  it('sweeps a root whose ancestors the OS sandbox protects instead of POSIX modes', async () => {
+    // Android's /data and /data/data are 771 owned by the system uid, so the
+    // ancestor write-class test would reject every root and cleanup would never
+    // run. The OS (uid isolation plus SELinux) is the boundary there, so the
+    // sweep must proceed rather than degrade silently.
+    if (!OS_PROTECTED_TREE) return
+    const unsafeParent = join(root, 'sandboxed-parent')
+    const unsafeRoot = join(unsafeParent, 'configured')
+    mkdirSync(unsafeRoot, { recursive: true, mode: 0o700 })
+    const dir = sessionDir(unsafeRoot, 'sess-1')
+    mkdirSync(dir, { recursive: true })
+    const old = join(dir, 'old.txt'); writeAged(old, 'x', 40)
+    chmodSync(unsafeParent, 0o777)
+    await runSweep([active(unsafeRoot)])
+    expect(existsSync(old)).toBe(false)
   })
 
   it('does not block activation but is awaited on disposal (quiescence)', async () => {

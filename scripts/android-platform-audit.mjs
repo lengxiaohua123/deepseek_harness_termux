@@ -244,6 +244,15 @@ const ADAPTATIONS = [
     file: 'packages/fs/fs-local/src/fsio.ts',
     markers: [/code === 'EACCES' \|\| code === 'EPERM'[\s\S]{0,240}?await rename\(tempPath, absolutePath\)/],
   },
+  {
+    reason: 'spill cleanup runs on Android, whose app-private tree is guarded by the OS sandbox rather than ancestor mode bits',
+    file: 'packages/spill/spill-local/src/cleanup.ts',
+    markers: [
+      /const ANCESTRY_MODES_DECIDE = process\.platform !== 'android'/,
+      /process\.env\.PREFIX\?\.includes\('com\.termux'\) !== true/,
+      /if \(!ANCESTRY_MODES_DECIDE \|\| process\.geteuid === undefined\) return true/,
+    ],
+  },
 ]
 
 /**

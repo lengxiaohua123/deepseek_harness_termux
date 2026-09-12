@@ -257,7 +257,7 @@ describe('real Loader composition', () => {
     // Setup owns both entries until it returns its disposer, so a failed surface
     // must take the mounted backend with it: otherwise a retry collides with the
     // directoryPicker registration this backend already made.
-    expect(entryNames(context!)).not.toContain(NATIVE)
+    expect(entryNames(context!)).not.toContain(attendedBackend)
     expect(context!.get('directoryPicker')).toBeUndefined()
   })
 
@@ -265,13 +265,13 @@ describe('real Loader composition', () => {
     stubAttendedHost()
     const { ctx, configPath } = await loadComposition('127.0.0.1')
 
-    const backendEntry = [...ctx.loader.entries()].find(entry => entry.options.name === NATIVE)!
+    const backendEntry = [...ctx.loader.entries()].find(entry => entry.options.name === attendedBackend)!
     await ctx.loader.remove(backendEntry.id)
     const autoEntry = [...ctx.loader.entries()].find(entry => entry.options.name === AUTO)!
     renameControl.remainingFailures = 1
     await expect(autoEntry.fiber!.dispose()).resolves.not.toThrow()
-    expect(entryNames(ctx)).not.toContain(NATIVE)
-    expect(entryNames(ctx)).not.toContain(NATIVE_SURFACE)
+    expect(entryNames(ctx)).not.toContain(attendedBackend)
+    expect(entryNames(ctx)).not.toContain(attendedSurface)
     // Same self-dispose persistence as above: drain the Include write queue
     // deterministically before asserting the persisted row.
     await includeTree(ctx).stop()

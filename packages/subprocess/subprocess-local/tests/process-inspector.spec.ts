@@ -225,14 +225,6 @@ describe('Linux process inspector', () => {
     fake.files.set('/proc/100/task/100/syscall', syscall(0, 2))
     expect(createProcessInspector('linux', 'mips', fake.internals).isStdinWaiting(77, 100)).toBe(false)
 
-  it('routes Android/Termux to the Linux /proc inspector', () => {
-    const fake = fakeInternals()
-    fake.dirs.set('/proc', ['10'])
-    fake.files.set('/proc/10/stat', stat(10, 20, 30, 40, '500'))
-    const inspector = createProcessInspector('android', 'arm64', fake.internals)
-    expect(inspector.foregroundPgid(10)).toBe(40)
-    expect(inspector.snapshot().tree(10)).toEqual([{ pid: 10, started: '500' }])
-  })
     expect(createProcessInspector('linux', 'x64', fake.internals).isStdinWaiting(77, 100)).toBe(false)
 
     fake.files.set('/proc/100/task/100/syscall', syscall(270, 1, 0))
@@ -255,6 +247,15 @@ describe('Linux process inspector', () => {
     fake.dirs.set('/proc', ['100', '200'])
     fake.files.set('/proc/200/stat', stat(200, 88, 200, 88, '2'))
     expect(createProcessInspector('linux', 'x64', fake.internals).isStdinWaiting(77, 100)).toBe(false)
+  })
+
+  it('routes Android/Termux to the Linux /proc inspector', () => {
+    const fake = fakeInternals()
+    fake.dirs.set('/proc', ['10'])
+    fake.files.set('/proc/10/stat', stat(10, 20, 30, 40, '500'))
+    const inspector = createProcessInspector('android', 'arm64', fake.internals)
+    expect(inspector.foregroundPgid(10)).toBe(40)
+    expect(inspector.snapshot().tree(10)).toEqual([{ pid: 10, started: '500' }])
   })
 
   it('contains unreadable syscall, memory, and fdinfo boundaries', () => {

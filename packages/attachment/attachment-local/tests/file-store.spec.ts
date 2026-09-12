@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { chmod, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
+import { chmod, link, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -27,6 +27,24 @@ afterEach(async () => {
 
 function sha256(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex')
+}
+
+/**
+ * Probe whether this filesystem permits hard links. Termux/Android refuses
+ * `link(2)` with EACCES, and the store then publishes a second copy instead of
+ * one shared digest object, so inode identity cannot be asserted there.
+ * @param root - an existing attachment root on the filesystem under test.
+ * @returns whether hard links succeed in this root.
+ */
+async function hardLinksAvailable(root: string): Promise<boolean> {
+  const source = join(root, '.link-probe-source')
+  await writeFile(source, 'x')
+  try {
+    await link(source, join(root, '.link-probe-target'))
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function readStream(stream: AsyncIterable<Uint8Array>): Promise<Uint8Array> {
@@ -112,8 +130,11 @@ describe('saveFileVerbatim', () => {
     expect(again).toEqual(first)
     const renamed = await saveFileVerbatim(root, { data, name: 'b.txt' })
     expect(renamed.attachmentId).toBe(first.attachmentId)
-    expect((await stat(storedFilePath(root, first))).ino)
-      .toBe((await stat(storedFilePath(root, renamed))).ino)
+    if (await hardLinksAvailable(root)) {
+      expect((await stat(storedFilePath(root, first))).ino)
+        .toBe((await stat(storedFilePath(root, renamed))).ino)
+    }
+    expect(await readFile(storedFilePath(root, renamed))).toEqual(Buffer.from(data))
     const digestDir = join(root, 'files', sha256(data).slice(0, 2), sha256(data))
     expect((await readdir(digestDir)).sort()).toEqual(['a.txt', 'b.txt'])
   })

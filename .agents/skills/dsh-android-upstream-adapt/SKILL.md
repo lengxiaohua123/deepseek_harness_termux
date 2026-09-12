@@ -143,15 +143,18 @@ The adapted-package suites are green on this machine except one known environmen
 - `subprocess-local/tests/process-exit.spec.ts` — failed on the android platform throw in `createProcessInspector`, not on sandbox cleanup.
 - `terminal-bash/tests/local.spec.ts` — failed on the same inspector throw plus a test that hardcoded `/bin/bash`; both fixed.
 
-Full-suite baseline after the 0.1.5-rc.2 sync (14.5 min, `--maxWorkers=4`): 14563 passed / 31 failed / 116 skipped (14710 tests, 872 files). All 31 are environmental — none touch the adapted packages:
+Full-suite baseline after the 0.1.5-rc.2 sync (1541s / 25.7 min, `--maxWorkers=4`, node v26.4.0 on 8 cores): 22365 passed / 109 failed / 1 expected fail / 133 skipped (22614 tests, 1276 files). Every one of the 109 is accounted for:
 
-- oxlint-contract and install-lefthook — tooling version / hard-link install; lefthook is unused on Termux.
-- subagent-claude-code / subagent-codex real-product — need the external CLIs and their API keys.
-- session-query-sqlite — inspect-API behavior on a slow machine.
-- credentials ×1 — Android filesystem does not reflect chmod(600).
-- gen-third-party-notices ×1 — optional Claude SDK payload not installed.
-- attachment `normalization.spec.ts` ×1 — sharp-wasm32 does not render SVG `<text>`; genuine wasm32 limitation.
-- process-exit, acp-snapshot, session-persistence-sqlite, lsp-stdio, tool-bash are green this run (timing flakes / fixed).
+- **65 `experimental/code-runtime-python/tests/runtime.spec.ts` — bionic memory-budget semantics.** A second run on an otherwise idle machine reproduced 65 of 65, so this is not machine load. The affected cases drive `RLIMIT_AS` and large allocations, and on Android they surface as CPython `MemoryError`, `SIGABRT` worker exits (`code=null, signal=SIGABRT`), and limit-kind mismatches (`exception` where glibc yields `output-limit`, `worker-exit` where it yields `timeout`). The product path therefore degrades from a classified budget outcome to an abort on Termux. Experimental package; the tests assert the glibc shape, so adapting them would mean rewriting what they verify. 2 of the 65 are unrelated and cheap: the spec shells out to `which`, which Termux does not ship — `pkg install which`.
+- **12 `spill/spill-local` — a real gap, not a test artifact.** `hasProtectedAncestors` refuses any root with a group-writable, non-sticky ancestor, and `/data/data/com.termux/files` is mode `771`. Every root is therefore rejected and the startup sweep is skipped, so spilled session data is never reclaimed and the spill directory grows without bound. Proven by calling `sweepSpillRoots` directly with a warning sink: `skipped unsafe root …: expected a current-user-owned directory with protected write and ancestor permissions`.
+- 11 `scripts/oxlint-contract.spec.ts` — the recorded oxlint/oxc-resolver diagnostics differ on this platform.
+- 8 `subagent-claude-code` + 6 `subagent-codex` real-product — need the external CLIs and their API keys; `@openai/codex` additionally asks for its `linux-arm64` payload, which Android never gets.
+- 3 `scripts/install-lefthook.spec.ts` — EACCES on `link(2)`, the same hard-link prohibition the store and session-persistence adaptations work around; lefthook is unused on Termux.
+- 1 `scripts/gen-third-party-notices.spec.ts` — optional Claude SDK payload not installed.
+- 1 `lsp/lsp-stdio/tests/instance.spec.ts` and 1 `credentials-local/tests/local.spec.ts` — ordering and chmod expectations Android does not reproduce.
+- 1 `attachment-local/tests/normalization.spec.ts` — sharp-wasm32 does not render SVG `<text>`.
+
+Green in this run, so a failure there is a real regression: `process-exit`, `acp-snapshot`, `session-query-sqlite`, `session-persistence-sqlite`, `tool-bash`.
 
 Reliable suites for the adaptation surface: `attachment-local/tests/image.spec.ts`, `subprocess-local/tests/terminal.spec.ts`, `subprocess-local/tests/spawn.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`.
 
@@ -265,3 +268,6 @@ Problems observed on this machine, with the verified fix. Symptoms below the fir
 | A platform scan reports clean, but a bare `=== 'linux'` branch is later found by hand | The scan used a `git grep` pathspec glob (`'packages/*/*/src/**/*.ts'`), which misses files directly under `src/`; run `node scripts/android-platform-audit.mjs`, which walks the tree itself |
 | `android-platform-audit.mjs` says `FAIL adaptation lost` after a merge | Upstream rewrote the file and dropped our `|| platform === 'android'`. Re-apply that row from the Adaptation ledger, then re-run the audit |
 | `android-platform-audit.mjs` says `FAIL unrecorded` | A new upstream `'linux'` branch. Read it, decide whether android must join it, and record the verdict in the script's `VERDICTS` (with `count: 1` or the real count) either way |
+| `code-runtime-python` spec fails with `spawnSync which ENOENT` | Termux ships no `which`; `pkg install which` clears the two cases that shell out to it |
+| `spill-local` cleanup tests fail with `expected true to be false` and no error | The sweep refuses the root: `hasProtectedAncestors` rejects a group-writable, non-sticky ancestor, and `/data/data/com.termux/files` is `771`. The sweep logs nothing by default; call `sweepSpillRoots` with a warning sink to see `skipped unsafe root`. Consequence: spilled session data is never reclaimed on Termux |
+| `code-runtime-python` budget tests report `MemoryError` or a `SIGABRT` worker exit | Bionic `RLIMIT_AS` and malloc-abort behavior differ from glibc, so the classified budget outcomes become aborts. Reproduces on an idle machine; treat as a platform difference rather than a flake |

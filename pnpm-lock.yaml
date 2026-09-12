@@ -756,12 +756,17 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  native/system/packages/android-arm64: {}
+
   native/system/packages/darwin-arm64: {}
 
   native/system/packages/darwin-x64: {}
 
   native/system/packages/entry:
     optionalDependencies:
+      '@deepseek-ai/node-addon-system-android-arm64':
+        specifier: workspace:*
+        version: link:../android-arm64
       '@deepseek-ai/node-addon-system-darwin-arm64':
         specifier: workspace:*
         version: link:../darwin-arm64

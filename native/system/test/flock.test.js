@@ -12,7 +12,7 @@ import { Worker } from 'node:worker_threads';
 import { tryLockExclusive } from '../packages/entry/lib/flock.js';
 import { loadFlockBinding } from './fixtures/flock-binding.js';
 
-const posix = process.platform === 'linux' || process.platform === 'darwin';
+const posix = process.platform === 'linux' || process.platform === 'darwin' || process.platform === 'android';
 const timeout = 120_000;
 const nativeOnly = { timeout, skip: posix ? false : 'The flock addon requires Linux or macOS' };
 

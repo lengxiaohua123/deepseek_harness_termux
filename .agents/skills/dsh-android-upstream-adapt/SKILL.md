@@ -58,15 +58,6 @@ Every new hit needs a verdict recorded in the script: either android falls throu
 - `experimental/code-runtime-python/src/index.ts` — already accepts android alongside linux.
 - `experimental/webworker-runtime` — comments only; that sandbox projects its own realm as linux regardless of host.
 
-### The platform-lie question
-
-Do not replace these dual matches by shimming `process.platform` to report `linux`. Measured on this machine: the shim works (`process.platform` is `configurable`, `os.platform()` follows it, and `NODE_OPTIONS` propagates it to children), but it makes JS believe `linux` while the native binaries stay android-built. `koffi` then fails with `Cannot find the native Koffi module` because its JS loader looks under `build/koffi/linux_arm64/` while the local build lands in `android_arm64/`. `sharp` and `node-pty` survive, and `canOpenNativePath()` flips to `false` because it requires `DISPLAY`/`WAYLAND_DISPLAY`, which disables native path opening. The lie also removes the signal that Android is not Linux: a future `'linux'` branch gets taken silently instead of falling through where this audit can see it. It saves the two one-line dual matches in `process-inspector.ts` and `spawn.ts` — and the upstream helper below retires those properly.
-
-### Upstream draft: retire the two dual matches
-
-`upstream-proc-process-tree.patch` (branch `upstream/proc-process-tree-helper`, based on `origin/master`) adds `hasProcProcessTree(platform)` to `process-inspector.ts` and calls it from both the inspector dispatch and the `spawn.ts` liveness rule, with an Agent Note triplet. `upstream-proc-process-tree-pr.md` is its PR body. If upstream lands an equivalent helper, delete adaptations 6 and 7 from the script's `ADAPTATIONS` and reclassify those two `VERDICTS` entries as `upstream` — otherwise check 2 will fail on a tree that is correct.
-
-
 High-risk adaptation surfaces. Upstream rewrites here force re-application — the complete file-by-file ledger with reasons is the "Adaptation ledger" section below:
 
 - `vendor/` — vendored Cordis; owns the loader's internal-module resolution that drives the `--expose-internals` requirement.
@@ -76,6 +67,14 @@ High-risk adaptation surfaces. Upstream rewrites here force re-application — t
 - `packages/sandbox/*` — Landlock/bwrap fail-closed semantics.
 - `packages/session/*`, `packages/host/directory-picker*` — Android filesystem quirks (hard-link-free session publish, browse picker fallback).
 - `package.json`, `pnpm-workspace.yaml`, `patches/` — dependency versions and patched deps.
+
+### The platform-lie question
+
+Do not replace these dual matches by shimming `process.platform` to report `linux`. Measured on this machine: the shim works (`process.platform` is `configurable`, `os.platform()` follows it, and `NODE_OPTIONS` propagates it to children), but it makes JS believe `linux` while the native binaries stay android-built. `koffi` then fails with `Cannot find the native Koffi module` because its JS loader looks under `build/koffi/linux_arm64/` while the local build lands in `android_arm64/`. `sharp` and `node-pty` survive, and `canOpenNativePath()` flips to `false` because it requires `DISPLAY`/`WAYLAND_DISPLAY`, which disables native path opening. The lie also removes the signal that Android is not Linux: a future `'linux'` branch gets taken silently instead of falling through where this audit can see it. It saves the two one-line dual matches in `process-inspector.ts` and `spawn.ts` — and the upstream helper below retires those properly.
+
+### Upstream draft: retire the two dual matches
+
+`upstream-proc-process-tree.patch` (branch `upstream/proc-process-tree-helper`, based on `origin/master`) adds `hasProcProcessTree(platform)` to `process-inspector.ts` and calls it from both the inspector dispatch and the `spawn.ts` liveness rule, with an Agent Note triplet. `upstream-proc-process-tree-pr.md` is its PR body. If upstream lands an equivalent helper, delete adaptations 6 and 7 from the script's `ADAPTATIONS` and reclassify those two `VERDICTS` entries as `upstream` — otherwise check 2 will fail on a tree that is correct.
 
 ## 2. Re-install and rebuild native addons when dependencies changed
 

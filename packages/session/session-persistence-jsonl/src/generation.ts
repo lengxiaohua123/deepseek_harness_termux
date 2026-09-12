@@ -14,6 +14,7 @@ import {
   open as fsOpen,
   readFile as fsReadFile,
   readdir as fsReaddir,
+  rename as fsRename,
   rm as fsRm,
   stat as fsStat,
   type FileHandle,
@@ -176,6 +177,7 @@ interface GenerationFileSystem {
   stat(path: string): Promise<JsonlPhysicalIdentity>
   lstat(path: string): Promise<{ isFile(): boolean; isSymbolicLink(): boolean }>
   link(existingPath: string, newPath: string): Promise<void>
+  rename(existingPath: string, newPath: string): Promise<void>
   rm(path: string): Promise<void>
 }
 
@@ -216,6 +218,7 @@ const defaultFileSystem: GenerationFileSystem = {
   stat: path => fsStat(path, { bigint: true }),
   lstat: path => fsLstat(path),
   link: fsLink,
+  rename: fsRename,
   rm: path => fsRm(path, { force: true }),
 }
 
@@ -229,6 +232,16 @@ const defaultInternals: JsonlGenerationInternals = {
 
 function isEEXIST(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | null)?.code === 'EEXIST'
+}
+
+/**
+ * Whether the filesystem refused the hard link itself rather than racing
+ * another publisher. Android SELinux (untrusted_app) forbids hard links
+ * outright, so the exclusive publish must fall back to an atomic rename.
+ */
+function isHardLinkForbidden(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  return code === 'EACCES' || code === 'EPERM'
 }
 
 /** Whether a filesystem-owned failure should retain its original errno and path. */
@@ -830,8 +843,23 @@ async function publishCurrentExclusive(
   } catch (error) {
     /* v8 ignore else -- a non-collision filesystem error propagates unchanged. */
     if (isEEXIST(error)) return false
-    /* v8 ignore next -- the filesystem error is already complete. */
-    throw error
+    if (isHardLinkForbidden(error)) {
+      // Android SELinux (untrusted_app) forbids hard links outright, so link()
+      // cannot itself report the EEXIST exclusivity. Preserve first-writer-wins:
+      // only publish when the target is absent, otherwise report the collision
+      // so the caller inspects the existing winner rather than clobbering it.
+      // Fail closed: an lstat error other than ENOENT (EACCES, EIO) means the
+      // target's state is unknown, so it is never treated as absent.
+      const existing = await internals.fs.lstat(currentPath).catch((cause: unknown) => {
+        if ((cause as NodeJS.ErrnoException | null)?.code === 'ENOENT') return undefined
+        throw cause
+      })
+      if (existing !== undefined) return false
+      await internals.fs.rename(staged, currentPath)
+    } else {
+      /* v8 ignore next -- the filesystem error is already complete. */
+      throw error
+    }
   }
   await syncDirectory(dirname(currentPath), internals)
   return true

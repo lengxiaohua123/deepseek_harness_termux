@@ -54,6 +54,20 @@ function line(value: unknown): string {
   return `${JSON.stringify(value)}\n`
 }
 
+/** Whether this host can create hard links; Android SELinux forbids them outright. */
+const hardLinkSupported = await (async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-link-probe-'))
+  try {
+    await writeFile(join(dir, 'a'), '')
+    await link(join(dir, 'a'), join(dir, 'b'))
+    return true
+  } catch {
+    return false
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})()
+
 function fsError(code: string, message = code): NodeJS.ErrnoException {
   const error = new Error(message) as NodeJS.ErrnoException
   error.code = code
@@ -564,7 +578,7 @@ describe('JSONL immutable generation publication', () => {
       ...identical,
       verifyCurrentFile: async (path, compression, expectedId, expectedEventCount) => {
         const verified = await verifyJsonlCurrentGeneration(path, compression, expectedId, expectedEventCount)
-        if (path !== identical.currentPath) await link(path, identical.currentPath)
+        if (hardLinkSupported && path !== identical.currentPath) await link(path, identical.currentPath)
         return verified
       },
     })
@@ -1206,7 +1220,7 @@ describe('JSONL immutable generation publication', () => {
     },
   )
 
-  it('accepts an identical regular hardlink target', async () => {
+  it.skipIf(!hardLinkSupported)('accepts an identical regular hardlink target', async () => {
     const root = await tempRoot()
     const request = options(root)
     const expected = join(root, 'expected.jsonl')
@@ -1337,6 +1351,55 @@ describe('JSONL immutable generation publication', () => {
     if (!(failure instanceof JsonlGenerationTargetConflictError)) throw new Error('expected target conflict')
     expect(failure.reason.message).toContain('noncanonical directory entry "session.V3.jsonl"')
     expect((await readdir(root)).every(name => !name.includes('.tmp'))).toBe(true)
+  })
+
+  it.each(['EACCES', 'EPERM'] as const)(
+    'publishes by rename when the filesystem refuses a hard link with %s',
+    async (code) => {
+      const root = await tempRoot()
+      const request = options(root)
+      await writeFile(request.sourcePath, line(header(0)) + line(event0))
+      const renames: Array<[string, string]> = []
+
+      await expect(ensureWithOverrides(request, {
+        fs: posixSimulationFs({
+          link: async () => { throw fsError(code) },
+          rename: async (from, to) => { renames.push([from, to]); await rename(from, to) },
+        }),
+      })).resolves.toMatchObject({ status: 'migrated', path: request.currentPath })
+
+      expect(renames).toHaveLength(1)
+      expect(renames[0]?.[1]).toBe(request.currentPath)
+      expect(await readFile(request.currentPath, 'utf8')).toBe(line(header(3)) + line(event0))
+    },
+  )
+
+  it('refuses to clobber an existing target when hard links are forbidden', async () => {
+    const root = await tempRoot()
+    const request = options(root)
+    await writeFile(request.sourcePath, line(header(0)) + line(event0))
+    const winner = line({ ...header(3), isSeeded: false }) + line({ ...event0, time: 99 })
+    await writeFile(request.currentPath, winner)
+
+    await expect(ensureWithOverrides(request, {
+      fs: posixSimulationFs({ link: async () => { throw fsError('EACCES') } }),
+    })).rejects.toBeInstanceOf(JsonlGenerationTargetConflictError)
+
+    // The pre-existing winner survives; the fallback never overwrites it.
+    expect(await readFile(request.currentPath, 'utf8')).toBe(winner)
+  })
+
+  it('fails closed when the target state cannot be read during the fallback', async () => {
+    const root = await tempRoot()
+    const request = options(root)
+    await writeFile(request.sourcePath, line(header(0)) + line(event0))
+
+    await expect(ensureWithOverrides(request, {
+      fs: posixSimulationFs({
+        link: async () => { throw fsError('EACCES') },
+        lstat: async () => { throw fsError('EIO') },
+      }),
+    })).rejects.toMatchObject({ code: 'EIO' })
   })
 
   it('preserves ENOENT when an exclusive-publication winner disappears', async () => {
@@ -1597,7 +1660,7 @@ describe('JSONL immutable generation publication', () => {
     }
   })
 
-  it('accepts an identical target that wins POSIX publication', async () => {
+  it.skipIf(!hardLinkSupported)('accepts an identical target that wins POSIX publication', async () => {
     const root = await tempRoot()
     const request = options(root)
     await writeFile(request.sourcePath, line(header(0)) + line(event0))

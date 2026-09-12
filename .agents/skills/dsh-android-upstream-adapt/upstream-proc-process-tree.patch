@@ -1,0 +1,203 @@
+From dbbad3f54b560798a1a0364d88b7ff128101763b Mon Sep 17 00:00:00 2001
+From: xleng <991350086@qq.com>
+Date: Sat, 12 Sep 2026 08:54:25 +0800
+Subject: [PATCH] refactor(subprocess): name the /proc process-tree platform
+ set
+
+createProcessInspector and the process-group liveness rule in spawn.ts each
+compared the target platform against the 'linux' literal, so the set of
+platforms that serve the Linux-style /proc process tree lived in two places and
+was named by an operating system rather than by the requirement.
+
+Android is Linux-family: bionic serves /proc/<pid>/stat and /proc/<pid>/task in
+the layout both readers parse, and os.platform() reports 'android'. The literal
+therefore excluded a platform whose readers work unchanged, and terminal
+inspection threw at plugin load on that platform.
+
+Export hasProcProcessTree(platform) from process-inspector.ts and call it from
+both readers. createProcessInspector keeps its fail-loud throw for every other
+platform.
+---
+ ...e-proc-process-tree-platform-set.i18n.yaml |  6 ++++
+ ...name-the-proc-process-tree-platform-set.md | 32 +++++++++++++++++++
+ ...e-the-proc-process-tree-platform-set.zh.md | 32 +++++++++++++++++++
+ .../subprocess-local/src/process-inspector.ts | 16 +++++++++-
+ .../subprocess/subprocess-local/src/spawn.ts  |  4 +--
+ .../tests/process-inspector.spec.ts           |  7 ++++
+ 6 files changed, 94 insertions(+), 3 deletions(-)
+ create mode 100644 .agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.i18n.yaml
+ create mode 100644 .agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.md
+ create mode 100644 .agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.zh.md
+
+diff --git a/.agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.i18n.yaml b/.agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.i18n.yaml
+new file mode 100644
+index 0000000000..116f476def
+--- /dev/null
++++ b/.agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.i18n.yaml
+@@ -0,0 +1,6 @@
++# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
++# side as of the last confirmed-consistent state. Both languages carry equal authority;
++# after editing either side, bring the other along and re-record with:
++#   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.md
++2026-09-12-name-the-proc-process-tree-platform-set.md: 3f55eec4a00438004d07728c361ade1a5a11f90b
++2026-09-12-name-the-proc-process-tree-platform-set.zh.md: 1aba8feefc97473a66b73e3ee1420c4160564229
+diff --git a/.agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.md b/.agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.md
+new file mode 100644
+index 0000000000..3f55eec4a0
+--- /dev/null
++++ b/.agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.md
+@@ -0,0 +1,32 @@
++# Agent Note: Name the /proc process-tree platform set
++
++Status: implemented
++
++English | [中文](2026-09-12-name-the-proc-process-tree-platform-set.zh.md)
++
++## Problem
++
++Two readers in `dsh-subprocess-local` compared the target platform against the `'linux'` literal: the platform dispatch in `createProcessInspector`, and the process-group liveness rule that `spawn.ts` runs after the direct child settles. Neither comparison named what the reader actually required, and the two copies had to stay in step by hand.
++
++Android is Linux-family. Bionic serves `/proc/<pid>/stat` and `/proc/<pid>/task` in the layout these readers parse, and `os.platform()` reports `android` there, so a supported reader was excluded by a platform string rather than by a missing capability. The exclusion was not benign: terminal inspection threw `terminal inspection is unsupported on platform android` at plugin load instead of reading the process table.
++
++## Decision
++
++`process-inspector.ts` exports `hasProcProcessTree(platform)`, and both readers call it.
++
++The predicate is named for the requirement — a Linux-style `/proc` process tree — rather than for an operating system, and it answers `true` for `linux` and `android`. The platform set is stated once, next to the readers that depend on it.
++
++`createProcessInspector` keeps its fail-loud `throw` for every other platform, so an unsupported platform still stops at plugin load rather than degrading into an inspector that reads paths it cannot parse.
++
++## Alternatives considered
++
++- **Repeat `platform === 'linux' || platform === 'android'` at each reader.** Keeps the platform set in two places and still names no requirement, so the next reader added for the same `/proc` tree has to rediscover the set.
++- **Widen the predicate to a general POSIX check.** macOS is POSIX and serves no `/proc` process tree; it has its own inspector and its own liveness behavior. A general POSIX predicate would route macOS readers to the Linux implementation.
++- **Probe for `/proc` at runtime.** A probe reports the container or sandbox view of the moment, so a masked `/proc` would silently move the terminal inspection path at runtime instead of failing at load. The platform is already known statically.
++- **Compare against `os.platform()` inside the predicate.** Callers pass a target platform explicitly, including platforms other than the host, so the predicate stays a pure function of its argument.
++
++## Consequences
++
++Terminal inspection and process-group liveness work on Android with no Android-specific code in either reader. Unsupported platforms keep their explicit error.
++
++A third `/proc`-backed platform is added by changing one predicate. A platform that serves `/proc` under a different layout must still add its own reader, because the predicate states which platforms share the layout, not which ones have a `/proc` directory.
+diff --git a/.agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.zh.md b/.agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.zh.md
+new file mode 100644
+index 0000000000..1aba8feefc
+--- /dev/null
++++ b/.agents/notes/implemented/simplification/2026-09-12-name-the-proc-process-tree-platform-set.zh.md
+@@ -0,0 +1,32 @@
++# Agent Note: 为 /proc 进程树平台集合命名
++
++Status: implemented
++
++[English](2026-09-12-name-the-proc-process-tree-platform-set.md) | 中文
++
++## Problem
++
++`dsh-subprocess-local` 中的两处读取把目标平台与 `'linux'` 字面量比较：`createProcessInspector` 的平台分发，以及 `spawn.ts` 在直接子进程结算后运行的进程组存活判定。两处比较都没有指出读取所需的实际条件，而这份副本必须靠人工保持一致。
++
++Android 属于 Linux 家族。bionic 提供的 `/proc/<pid>/stat` 与 `/proc/<pid>/task` 正是这些读取所解析的布局，且该平台上 `os.platform()` 返回 `android`，因此一个本可支持的读取被平台字符串而非缺失能力排除在外。这种排除并非无害：终端检查在插件加载时抛出 `terminal inspection is unsupported on platform android`，而不是去读进程表。
++
++## Decision
++
++`process-inspector.ts` 导出 `hasProcProcessTree(platform)`，两处读取都调用它。
++
++该谓词以其所需条件命名——Linux 风格的 `/proc` 进程树——而非以操作系统命名，并对 `linux` 与 `android` 返回 `true`。平台集合只在依赖它的读取旁声明一次。
++
++`createProcessInspector` 保留对其余平台的响亮 `throw`，因此不受支持的平台仍在插件加载时停止，而不会退化成读取无法解析路径的检查器。
++
++## Alternatives considered
++
++- **在每处读取重复 `platform === 'linux' || platform === 'android'`。** 平台集合仍留在两处，且依旧没有为所需条件命名，于是下一个为同一 `/proc` 树新增的读取必须重新发现这份集合。
++- **把谓词放宽为通用 POSIX 判定。** macOS 是 POSIX 且不提供 `/proc` 进程树；它有自己的检查器与存活行为。通用 POSIX 谓词会把 macOS 的读取导向 Linux 实现。
++- **在运行时探测 `/proc`。** 探测反映的是当刻容器或沙箱的视图，被遮蔽的 `/proc` 会在运行时静默改变终端检查路径，而不是在加载时失败。平台本就是静态已知的。
++- **在谓词内部比较 `os.platform()`。** 调用方显式传入目标平台，其中包含非宿主平台，因此该谓词保持为仅依赖其参数的纯函数。
++
++## Consequences
++
++终端检查与进程组存活判定在 Android 上可用，而两处读取都没有 Android 专属代码。不受支持的平台保留其显式错误。
++
++新增第三个基于 `/proc` 的平台只需改动一个谓词。若某平台以不同布局提供 `/proc`，仍须自行新增读取，因为该谓词声明的是哪些平台共享该布局，而不是哪些平台拥有 `/proc` 目录。
+diff --git a/packages/subprocess/subprocess-local/src/process-inspector.ts b/packages/subprocess/subprocess-local/src/process-inspector.ts
+index 08cec3b4ab..81e273436c 100644
+--- a/packages/subprocess/subprocess-local/src/process-inspector.ts
++++ b/packages/subprocess/subprocess-local/src/process-inspector.ts
+@@ -518,6 +518,20 @@ class MacProcessInspector extends PosixProcessInspector {
+ 
+ }
+ 
++/**
++ * Whether the platform exposes the Linux-style `/proc` process tree that the
++ * inspector and the process-group liveness rule read.
++ *
++ * Android is Linux-family: bionic keeps `/proc/<pid>/stat` and
++ * `/proc/<pid>/task` in the layout these readers parse, so the platform set is
++ * named once here instead of being spelled out at each reader.
++ * @param platform - target Node platform.
++ * @returns `true` for the platforms backed by the `/proc` process tree.
++ */
++export function hasProcProcessTree(platform: NodeJS.Platform): boolean {
++  return platform === 'linux' || platform === 'android'
++}
++
+ /**
+  * Create the supported platform inspector or fail at plugin load.
+  * @param platform - target Node platform.
+@@ -530,7 +544,7 @@ export function createProcessInspector(
+   arch: NodeJS.Architecture = process.arch,
+   internals: ProcessInspectorInternals = DEFAULT_INTERNALS,
+ ): ProcessInspector {
+-  if (platform === 'linux') return new LinuxProcessInspector(arch, internals)
++  if (hasProcProcessTree(platform)) return new LinuxProcessInspector(arch, internals)
+   if (platform === 'darwin') return new MacProcessInspector(internals)
+   if (platform === 'win32') return createWindowsProcessInspector()
+   throw new Error(`subprocess-local: terminal inspection is unsupported on platform ${platform}`)
+diff --git a/packages/subprocess/subprocess-local/src/spawn.ts b/packages/subprocess/subprocess-local/src/spawn.ts
+index 9079716c71..514c0e9393 100644
+--- a/packages/subprocess/subprocess-local/src/spawn.ts
++++ b/packages/subprocess/subprocess-local/src/spawn.ts
+@@ -27,7 +27,7 @@ import type {
+ } from '@deepseek-ai/dsh-subprocess'
+ import type { BoundProcessOwner, ManagedProcessLaunch } from './managed-owner.ts'
+ import { waitWithAbort } from './managed-owner.ts'
+-import { linuxProcessGroupHasLiveMembers } from './process-inspector.ts'
++import { hasProcProcessTree, linuxProcessGroupHasLiveMembers } from './process-inspector.ts'
+ 
+ type SpawnProcess = (
+   program: string,
+@@ -417,7 +417,7 @@ function fallbackOwner(
+     if (platform === 'win32') return child.exitCode === null && child.signalCode === null
+     try {
+       process.kill(-pid, 0)
+-      if (directSettled && platform === 'linux' && linuxGroupHasLiveMembers(pid) === false) return false
++      if (directSettled && hasProcProcessTree(platform) && linuxGroupHasLiveMembers(pid) === false) return false
+       return true
+     } catch (error) {
+       const code = (error as NodeJS.ErrnoException).code
+diff --git a/packages/subprocess/subprocess-local/tests/process-inspector.spec.ts b/packages/subprocess/subprocess-local/tests/process-inspector.spec.ts
+index 797076ebfc..19d8fecf61 100644
+--- a/packages/subprocess/subprocess-local/tests/process-inspector.spec.ts
++++ b/packages/subprocess/subprocess-local/tests/process-inspector.spec.ts
+@@ -1,6 +1,7 @@
+ import { describe, expect, it } from 'vitest'
+ import {
+   createProcessInspector,
++  hasProcProcessTree,
+   linuxProcessGroupHasLiveMembers,
+   parseProcStat,
+ } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
+@@ -331,6 +332,12 @@ describe('macOS process inspector', () => {
+     fake.internals.exec = () => { throw new Error('gone') }
+     expect(createProcessInspector('darwin', 'arm64', fake.internals).foregroundPgid(1)).toBeUndefined()
+     expect(createProcessInspector('win32', 'x64', fake.internals)).toBeInstanceOf(WindowsProcessInspector)
++    expect(hasProcProcessTree('android')).toBe(true)
++    expect(hasProcProcessTree('freebsd')).toBe(false)
++    // Android is Linux-family, so it reads the same /proc process tree.
++    fake.dirs.set('/proc', ['10'])
++    fake.files.set('/proc/10/stat', stat(10, 20, 30, 40, '500'))
++    expect(createProcessInspector('android', 'arm64', fake.internals).foregroundPgid(10)).toBe(40)
+     expect(() => createProcessInspector('freebsd', 'x64', fake.internals)).toThrow('unsupported on platform freebsd')
+   })
+ })
+-- 
+2.55.0
+

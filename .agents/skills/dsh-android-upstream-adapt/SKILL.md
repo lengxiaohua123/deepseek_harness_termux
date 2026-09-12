@@ -36,23 +36,36 @@ Conflicts concentrate in the adaptation surfaces listed in step 1; expect them t
 git log --oneline origin/master..HEAD                # this branch's own commits
 git diff origin/master...HEAD --stat                 # what the merge pulled in
 git log origin/master.. -- packages/ vendor/ apps/   # which areas moved
-# Platform-branch scan: every incoming platform check must route android
-# correctly (win32 special-cases are fine; a bare === 'linux' branch that
-# android would MISS is not).
-grep -rnE "platform *[!=]== *'linux'|=== *'linux'" packages --include=*.ts | grep -v /lib/ | grep -v /tests/
+node scripts/android-platform-audit.mjs              # platform routing: new linux branches AND surviving adaptations
 ```
 
-Run the scan REPO-WIDE, not only over the merge diff: a renamed or newly split file carries branches the diff view hides behind a rename, and only the whole-tree list lets you confirm each site's verdict. Never scope it with a `git grep` pathspec glob — `git grep -nE "<pattern>" -- 'packages/*/*/src/**/*.ts'` silently matches almost nothing because GitHub-style `**/` there does not match a file directly under `src/` (it misses every `src/index.ts`, i.e. most packages' main entry). Use `grep -rn` or a plain `-- 'packages/'` pathspec.
+`android-platform-audit.mjs` is the authority for both platform questions; do not hand-run a grep instead.
 
-Every `=== 'linux'` hit needs a verdict: either android falls through to the correct default, or the branch needs the dual-value match (`android` OR `linux && arm64`). `=== 'darwin'`/`=== 'win32'` branches are safe — android takes the POSIX path. Current verdicts, so a re-check only has to look for new sites:
+- Check 1 fails on a `'linux'` comparison in runtime source that has no recorded verdict, and on a file whose comparison count grew — an upstream branch Android would silently skip. It matches any expression carrying the platform (`platform`, `facts.platform`, `os.platform()`, a local alias), in either operand order, so a renamed parameter cannot hide a site.
+- Check 2 fails when a recorded adaptation lost its markers. This is the check that matters most after a merge: upstream overwriting `platform === 'linux' || platform === 'android'` back to its own form leaves the site count identical, so check 1 alone reports clean.
+- It also refuses a narrowed corpus, so a broken walk cannot look like a clean tree.
 
-| Site | Verdict |
-| --- | --- |
-| `subprocess-local/src/index.ts` `platform === 'linux'` (containment mode) | Correct as-is. The `linux-scope` probe requires `systemctl --user`/`systemd-run --user`, absent on Termux, so android would land in `fallback` anyway; excluding android also skips two `spawnSync` probes. |
-| `util/native-command/src/path-opener.ts` `platform === 'linux'` sites | Correct as-is; the remaining ones are `$BROWSER`/WSL semantics. Android has its own `termux-open` branches for open and reveal. |
-| `host/directory-picker-auto` `platform !== 'linux'`, `directory-picker-native` `platform === 'linux'` | Correct as-is. Android has no zenity/kdialog, so auto picks `browse`; forcing `native` throws a loud unsupported-platform error. |
-| `host/open-in-app` `specFor()`/`icons.ts` `linux` | Correct as-is. The catalog is desktop-app-specific; generic opening goes through the path opener's android branch. |
-| `experimental/code-runtime-python/src/index.ts` | Already accepts android alongside linux. |
+Run it repo-wide, never only over the merge diff: a renamed or newly split file carries branches the diff view hides behind a rename.
+
+Companion modes: `--markdown` prints the current verdict table (the single home for those verdicts is the script); `--literals` lists `'linux'` literals no comparison pattern claimed, which is how a map key or array membership check would surface; `--self-test` proves both checks reject, and runs in a temp fixture tree.
+
+Every new hit needs a verdict recorded in the script: either android falls through to the correct default, or the branch needs the dual-value match (`android` OR `linux && arm64`). `=== 'darwin'`/`=== 'win32'` branches are safe — android takes the POSIX path. Verdicts decided from source reading, kept in the script so the next sync only has to look for new sites:
+
+- `subprocess-local/src/index.ts` containment mode — correct as-is. The `linux-scope` probe requires `systemctl --user`/`systemd-run --user`, absent on Termux, so android would land in `fallback` anyway; excluding android also skips two `spawnSync` probes.
+- `util/native-command/src/path-opener.ts` — correct as-is; the remaining sites are `$BROWSER`/WSL semantics, and android has its own `termux-open` branches. Note Termux does ship `xdg-open` (a wrapper forwarding to `termux-open`) and an Android `zenity` binary, so "the tool is missing" is not a safe assumption for a new Linux branch — check `canOpenNativePath`'s `DISPLAY` requirement instead.
+- `host/directory-picker-auto` / `directory-picker-native` — correct as-is. Android has no attended Linux chooser, so auto picks `browse`; forcing `native` throws a loud unsupported-platform error.
+- `host/open-in-app` `specFor()`/`icons.ts` — correct as-is. The catalog is desktop-app-specific; generic opening goes through the path opener's android branch.
+- `experimental/code-runtime-python/src/index.ts` — already accepts android alongside linux.
+- `experimental/webworker-runtime` — comments only; that sandbox projects its own realm as linux regardless of host.
+
+### The platform-lie question
+
+Do not replace these dual matches by shimming `process.platform` to report `linux`. Measured on this machine: the shim works (`process.platform` is `configurable`, `os.platform()` follows it, and `NODE_OPTIONS` propagates it to children), but it makes JS believe `linux` while the native binaries stay android-built. `koffi` then fails with `Cannot find the native Koffi module` because its JS loader looks under `build/koffi/linux_arm64/` while the local build lands in `android_arm64/`. `sharp` and `node-pty` survive, and `canOpenNativePath()` flips to `false` because it requires `DISPLAY`/`WAYLAND_DISPLAY`, which disables native path opening. The lie also removes the signal that Android is not Linux: a future `'linux'` branch gets taken silently instead of falling through where this audit can see it. It saves the two one-line dual matches in `process-inspector.ts` and `spawn.ts` — and the upstream helper below retires those properly.
+
+### Upstream draft: retire the two dual matches
+
+`upstream-proc-process-tree.patch` (branch `upstream/proc-process-tree-helper`, based on `origin/master`) adds `hasProcProcessTree(platform)` to `process-inspector.ts` and calls it from both the inspector dispatch and the `spawn.ts` liveness rule, with an Agent Note triplet. `upstream-proc-process-tree-pr.md` is its PR body. If upstream lands an equivalent helper, delete adaptations 6 and 7 from the script's `ADAPTATIONS` and reclassify those two `VERDICTS` entries as `upstream` — otherwise check 2 will fail on a tree that is correct.
+
 
 High-risk adaptation surfaces. Upstream rewrites here force re-application — the complete file-by-file ledger with reasons is the "Adaptation ledger" section below:
 
@@ -148,7 +161,7 @@ Re-apply or re-verify each item when upstream rewrote the owning file:
 - sharp still falls back to `@img/sharp-wasm32`.
 - Lazy native imports survive upstream rewrites: `attachment-local/src/image.ts` (`await import('sharp')` on first use) and `subprocess-local/src/index.ts` (`await import('node-pty')` on first PTY spawn). They are behavior-neutral; re-apply the pattern if upstream inlines the static imports again.
 - Terminal shell path stays Termux-safe: `terminal-bash/src/config.ts` resolves the default with `existsSync('/bin/bash') ? '/bin/bash' : 'bash'` — Termux has no `/bin/bash`.
-- `native-path-opener.ts` keeps the android branch (`termux-open(1)` via the intent launcher) and `canOpenNativePath('android')` answers true; without them the platform throws and the open button hides.
+- `util/native-command/src/path-opener.ts` keeps the android branch (`termux-open(1)` via the intent launcher) and `canOpenNativePath('android')` answers true; without them the platform throws and the open button hides.
 - `process-inspector.ts` `createProcessInspector` routes `'android'` to the Linux `/proc` inspector (arm64 syscall table); `spawn.ts` group-liveness includes `'android'`. These make terminal inspection and tree teardown equal to Linux on Termux.
 - `attachment-local/src/store.ts` keeps two Android degradations: `syncDirectory` skips root-owned ancestors it cannot open (`/data`, `/data/data` — EACCES/EPERM) instead of failing the publication, and the object publish falls back from `link()` to `rename()` when SELinux forbids hard links (same pattern as session-persistence-jsonl).
 - Directory picker still falls back to the `browse` backend (`tsconfig.base.json` carries the client-package mapping).
@@ -158,7 +171,7 @@ Re-apply or re-verify each item when upstream rewrote the owning file:
 
 ## Adaptation ledger — every divergence from upstream, and why
 
-Re-apply only what upstream rewrote; everything else survives merges. Verify each item against the live diff during step 1.
+Re-apply only what upstream rewrote; everything else survives merges. Verify each item against the live diff during step 1. The platform-routing rows (inspector, spawn, settings watcher, opener) are also machine-checked: `node scripts/android-platform-audit.mjs` fails when one loses its markers, which is the failure a diff review misses because the site count stays the same.
 
 ### Code adaptations (upstream rewrites the file → re-apply)
 
@@ -166,7 +179,7 @@ Re-apply only what upstream rewrote; everything else survives merges. Verify eac
 |---|---|---|
 | `packages/attachment/attachment-local/src/image.ts` | static `import sharp` → lazy `loadSharp()` on first use | sharp resolves to `@img/sharp-wasm32` on Android; a WASM backend at boot is waste |
 | `packages/attachment/attachment-local/src/store.ts` | `syncDirectory` skips unopenable ancestors; publish falls back `link()` → `rename()` | root-owned `/data`/`/data/data` are unreadable; SELinux forbids hard links |
-| `packages/host/apiproxy/src/native-path-opener.ts` | android branch runs `termux-open`; `canOpenNativePath('android')` true | termux-open ships with termux-tools; without the branch the platform throws |
+| `packages/util/native-command/src/path-opener.ts` | android branch runs `termux-open`; `canOpenNativePath('android')` true | termux-open ships with termux-tools; without the branch the platform throws |
 | `packages/session/session-persistence-jsonl/src/index.ts` | publish via `rename()` when `link()` returns EACCES/EPERM | SELinux forbids hard links; rename stays atomic |
 | `packages/subprocess/subprocess-local/src/index.ts` | static `import * as nodePty` → `await import('node-pty')` at first PTY spawn | native addon load at boot is waste |
 | `packages/subprocess/subprocess-local/src/process-inspector.ts` | `createProcessInspector` routes `'android'` to `LinuxProcessInspector` | Termux reports platform `'android'`; the old code threw, breaking every terminal |
@@ -176,7 +189,7 @@ Re-apply only what upstream rewrote; everything else survives merges. Verify eac
 | `packages/fs/tool-fs-search/src/search-core.ts` | `resolveRgPath()` falls back to a PATH `rg` when `@vscode/ripgrep` fails to load | VS Code never published an android platform package; Termux supplies `rg` via `pkg install ripgrep` or a statically linked aarch64 musl binary (glibc arm64 binaries do not load on bionic) |
 | `packages/fs/fs-local/src/fsio.ts` | the `createIfAbsent` publish falls back from `link()` to `rename()` on EACCES/EPERM | Android SELinux forbids hard links; this one fix keeps the fs write/edit tools working on Termux |
 
-Test companions travel with the code: `apiproxy/tests/native-path-opener.spec.ts`, `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`, `settings-file/tests/local.spec.ts` (waitFor raised to 15s), `tool-fs-search/tests/tools.spec.ts` + `rg-path.spec.ts` (resolve via the product resolver instead of a static `@vscode/ripgrep` import), `directory-picker-auto/tests/loader-composition.spec.ts` + `directory-picker-native/tests/native-picker.spec.ts` (assert the android fallback to browse instead of assuming a native tier — this one has several assertions, so re-apply it as a whole file: the attended cases must use the `attendedBackend`/`attendedSurface` constants in the `find(...)` and `not.toContain(...)` calls too, not only in the mount assertions, or the later cases dereference an entry that does not exist on android), `attachment-local/tests/file-store.spec.ts` (guard the hard-link inode assertion with a `link(2)` capability probe, since the store's rename fallback publishes a copy).
+Test companions travel with the code: `util/native-command/tests/path-opener.spec.ts` (the opener moved out of `host/apiproxy`), `subprocess-local/tests/process-inspector.spec.ts`, `terminal-bash/tests/local.spec.ts`, `settings-file/tests/local.spec.ts` (waitFor raised to 15s), `tool-fs-search/tests/tools.spec.ts` + `rg-path.spec.ts` (resolve via the product resolver instead of a static `@vscode/ripgrep` import), `directory-picker-auto/tests/loader-composition.spec.ts` + `directory-picker-native/tests/native-picker.spec.ts` (assert the android fallback to browse instead of assuming a native tier — this one has several assertions, so re-apply it as a whole file: the attended cases must use the `attendedBackend`/`attendedSurface` constants in the `find(...)` and `not.toContain(...)` calls too, not only in the mount assertions, or the later cases dereference an entry that does not exist on android), `attachment-local/tests/file-store.spec.ts` (guard the hard-link inode assertion with a `link(2)` capability probe, since the store's rename fallback publishes a copy).
 
 Two traps when re-applying a companion by hand, both hit during the 0.1.5-rc.2 sync: pasting the new `it(...)` inside an existing test body instead of after it (vitest then fails collection with `Calling the test function inside another test function is not allowed`), and adapting only the first assertion of a repeated pattern. Run the companion file itself right after re-applying it — it is the only signal for both.
 
@@ -204,6 +217,8 @@ Upstream-owned, do not touch: `patches/node-pty@1.1.0.patch` (upstream supplies 
 - `AGENTS.md` + `scripts/doc-budgets.manifest.json` — refreshed package index and its raised budget ceiling (1900→2000); no Android content, but keep the local copy when upstream rewrites them.
 - `.github/workflows/sync-upstream.yml` — daily upstream mirror; must stay on the default branch.
 - `.agents/skills/` — the skills themselves.
+- `scripts/android-platform-audit.mjs` — the platform-routing gate (verdicts + adaptation markers + corpus floor). Its `VERDICTS` and `ADAPTATIONS` tables are the machine-readable half of the ledger; `--self-test` proves both checks reject.
+- `.agents/skills/dsh-android-upstream-adapt/upstream-proc-process-tree.patch` + `upstream-proc-process-tree-pr.md` — the upstream draft that retires adaptations 6 and 7. Fork tooling, never merged into `master`.
 
 Machine-local, NOT in the repo (do not hunt for them in the diff): `~/.zshrc` `dshstart`/`dshstop`/`dshstatus`/`dshattach` tmux helpers, `~/.dsh/settings.yaml` (danger-full-access default).
 
@@ -211,6 +226,7 @@ Machine-local, NOT in the repo (do not hunt for them in the diff): `~/.zshrc` `d
 
 - `master` — upstream mirror only (`git reset --hard origin/master`), never edited.
 - `adapt/android-termux` — ALL adaptations (code + deps + docs), the daily working branch.
+- `upstream/proc-process-tree-helper` — the `hasProcProcessTree` draft based on `origin/master`, for sending upstream. Rebase it on `origin/master` before pushing; the patch file is the stale-proof copy.
 - `feat/android-native-deps` — deps+patches-only snapshot (7 files), merged into adapt; useful to reinstall dependencies from, re-pushed but never re-based on upstream. Code adaptations cannot live there — they must merge against upstream on `adapt/android-termux` anyway, and the ledger above, not branch topology, is what prevents forgetting a re-apply.
 
 ## Troubleshooting
@@ -232,4 +248,6 @@ Problems observed on this machine, with the verified fix. Symptoms below the fir
 | Build reports spurious TS errors right after a sync | Do not run `npm run build:lib:host` concurrently with `pnpm install` — both mutate node_modules and race. Run install first, then build |
 | New upstream tests hardcode a default we overrode (e.g. `/bin/bash` in the new dialect tests) | When a default-resolution fix (existsSync fallback) collides with an upstream test that asserts the literal old default, update that test to expect the resolved value (`existsSync('/bin/bash') ? '/bin/bash' : 'bash'`) — same pattern as terminal-bash config |
 | A spec fails `Calling the test function inside another test function is not allowed` | A re-applied test companion was pasted into the middle of an existing test body instead of after it. Re-insert the added `it(...)` block at the end of the enclosing `describe`, next to the sibling test it belongs with |
-| A platform scan reports clean, but a bare `=== 'linux'` branch is later found by hand | The scan used a `git grep` pathspec glob (`'packages/*/*/src/**/*.ts'`), which misses files directly under `src/`; re-run it with `grep -rn` as step 1 shows |
+| A platform scan reports clean, but a bare `=== 'linux'` branch is later found by hand | The scan used a `git grep` pathspec glob (`'packages/*/*/src/**/*.ts'`), which misses files directly under `src/`; run `node scripts/android-platform-audit.mjs`, which walks the tree itself |
+| `android-platform-audit.mjs` says `FAIL adaptation lost` after a merge | Upstream rewrote the file and dropped our `|| platform === 'android'`. Re-apply that row from the Adaptation ledger, then re-run the audit |
+| `android-platform-audit.mjs` says `FAIL unrecorded` | A new upstream `'linux'` branch. Read it, decide whether android must join it, and record the verdict in the script's `VERDICTS` (with `count: 1` or the real count) either way |

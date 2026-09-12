@@ -17,7 +17,7 @@
  *   node scripts/android-platform-audit.mjs --self-test   # prove the checks reject
  */
 
-import { readdirSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, posix, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -37,6 +37,61 @@ const LINUX_LITERAL = /'linux'/g
 
 /** Floor for a credible runtime scan; this tree holds 1600+ runtime sources. */
 const MIN_RUNTIME_SOURCES = 400
+
+/**
+ * Native artifacts the Android toolchain and runtime must resolve. Dependencies
+ * branch on `process.platform` too: npm ships `android-arm64` variants for the
+ * Rust/Go binding packages, while `koffi` and `node-pty` have no Android
+ * prebuild and are compiled locally into the directory their own loader picks
+ * for the `android` platform string. A dependency bump or a plain reinstall can
+ * drop any of these, so each is asserted by path.
+ */
+const NATIVE_ARTIFACTS = [
+  {
+    glob: 'node_modules/.pnpm/@esbuild+android-arm64@*/node_modules/@esbuild/android-arm64/package.json',
+    reason: 'esbuild serves the bundler on android only through this variant; no linux-arm64 variant is installed',
+  },
+  {
+    glob: 'node_modules/.pnpm/@rolldown+binding-android-arm64@*/node_modules/@rolldown/binding-android-arm64/package.json',
+    reason: 'rolldown is the runtime bundler; android resolves only through this binding',
+  },
+  {
+    glob: 'node_modules/.pnpm/@rollup+rollup-android-arm64@*/node_modules/@rollup/rollup-android-arm64/package.json',
+    reason: 'rollup native binding for android',
+  },
+  {
+    glob: 'node_modules/.pnpm/@oxlint+binding-android-arm64@*/node_modules/@oxlint/binding-android-arm64/package.json',
+    reason: 'oxlint native binding for android',
+  },
+  {
+    glob: 'node_modules/.pnpm/@oxc-resolver+binding-android-arm64@*/node_modules/@oxc-resolver/binding-android-arm64/package.json',
+    reason: 'oxc-resolver native binding for android',
+  },
+  {
+    glob: 'node_modules/.pnpm/lightningcss-android-arm64@*/node_modules/lightningcss-android-arm64/package.json',
+    reason: 'lightningcss native binding for android (web build CSS)',
+  },
+  {
+    glob: 'node_modules/.pnpm/koffi@*/node_modules/koffi/build/koffi/android_arm64/koffi.node',
+    reason: 'koffi has no android prebuild and its loader reads build/koffi/<platform>_<arch>; run scripts/android-native-build.sh',
+  },
+  {
+    glob: 'node_modules/.pnpm/node-pty@*/node_modules/node-pty/build/Release/pty.node',
+    reason: 'node-pty has no android prebuild; its loader prefers build/Release, so the local compile must exist',
+  },
+  {
+    glob: 'node_modules/.pnpm/@img+sharp-wasm32@*/node_modules/@img/sharp-wasm32/package.json',
+    reason: 'sharp has no android variant; @img/sharp-wasm32 is the supported fallback sharp itself names',
+  },
+]
+
+/** Host commands that stand in for a dependency Android never published. */
+const HOST_COMMANDS = [
+  {
+    command: 'rg',
+    reason: '@vscode/ripgrep publishes no android-arm64 package, so fs search falls back to a PATH rg (pkg install ripgrep)',
+  },
+]
 
 /**
  * Recorded verdict for one runtime source file that compares against `'linux'`.
@@ -284,6 +339,57 @@ function auditLiterals(root) {
 }
 
 /**
+ * Expand a `/`-separated glob under a root, supporting `*` in any segment.
+ * @param root - directory the pattern is relative to.
+ * @param pattern - slash-separated pattern, where `*` matches within one segment.
+ * @returns every matching path, relative to `root`, in slash form.
+ */
+function resolveGlob(root, pattern) {
+  let candidates = ['']
+  for (const segment of pattern.split('/')) {
+    const next = []
+    for (const base of candidates) {
+      if (!segment.includes('*')) {
+        const candidate = base === '' ? segment : `${base}/${segment}`
+        if (existsSync(join(root, candidate))) next.push(candidate)
+        continue
+      }
+      const prefix = segment.slice(0, segment.indexOf('*'))
+      const suffix = segment.slice(segment.lastIndexOf('*') + 1)
+      let entries
+      try {
+        entries = readdirSync(join(root, base))
+      } catch {
+        continue
+      }
+      for (const entry of entries) {
+        if (!entry.startsWith(prefix) || !entry.endsWith(suffix)) continue
+        next.push(base === '' ? entry : `${base}/${entry}`)
+      }
+    }
+    candidates = next
+  }
+  return candidates
+}
+
+/**
+ * Verify the native artifacts the Android toolchain and runtime resolve, and
+ * the host commands that stand in for a dependency Android never published.
+ * @param root - repository root holding `node_modules`.
+ * @param artifacts - artifact globs to require.
+ * @param commands - host commands to require on `PATH`.
+ * @returns the artifacts and commands that did not resolve.
+ */
+function checkNativeDependencies(root, artifacts, commands) {
+  const missingArtifacts = artifacts.filter(entry => resolveGlob(root, entry.glob).length === 0)
+  const pathDirectories = (process.env.PATH ?? '').split(':').filter(directory => directory !== '')
+  const missingCommands = commands.filter(entry => !pathDirectories.some((directory) => {
+    return resolveGlob(directory, entry.command).length > 0
+  }))
+  return { missingArtifacts, missingCommands }
+}
+
+/**
  * Run both audits and report them.
  * @param root - repository root to audit.
  * @param options - verdict table, adaptation table, scan floor, and literal switch.
@@ -293,8 +399,10 @@ function runAudit(root, options) {
   const branches = auditBranches(root, options.verdicts, options.minSources)
   const missing = auditAdaptations(root, options.adaptations)
   const literals = options.literals ? auditLiterals(root) : []
+  const dependencies = checkNativeDependencies(root, options.artifacts, options.commands)
   const failed = branches.narrowed || branches.unrecorded.length > 0
     || branches.drifted.length > 0 || missing.length > 0
+    || dependencies.missingArtifacts.length > 0 || dependencies.missingCommands.length > 0
 
   if (branches.narrowed) {
     console.log(`FAIL narrowed corpus: found ${branches.sources.length} runtime sources, expected at least ${options.minSources}`)
@@ -314,6 +422,14 @@ function runAudit(root, options) {
     console.log(`FAIL adaptation lost: ${adaptation.file} (${adaptation.reason})`)
     for (const marker of markers) console.log(`       missing: ${marker}`)
   }
+  console.log(`native artifacts: ${options.artifacts.length - dependencies.missingArtifacts.length}/${options.artifacts.length} resolved, host commands: ${options.commands.length - dependencies.missingCommands.length}/${options.commands.length} present`)
+  for (const entry of dependencies.missingArtifacts) {
+    console.log(`FAIL native artifact missing: ${entry.glob}`)
+    console.log(`       ${entry.reason}`)
+  }
+  for (const entry of dependencies.missingCommands) {
+    console.log(`FAIL host command missing: ${entry.command} — ${entry.reason}`)
+  }
   for (const { file, line, text } of literals) {
     console.log(`note unclaimed literal: ${file}:${line} ${text}`)
   }
@@ -321,7 +437,7 @@ function runAudit(root, options) {
     console.log('\naudit failed')
     return false
   }
-  console.log(`all ${options.verdicts.length} verdicts match and all ${options.adaptations.length} adaptations are present`)
+  console.log(`all ${options.verdicts.length} verdicts match, all ${options.adaptations.length} adaptations are present, and every native artifact resolves`)
   return true
 }
 
@@ -337,7 +453,7 @@ function selfTest() {
     file: 'packages/a/b/src/index.ts',
     markers: [/platform === 'linux' \|\| platform === 'android'/],
   }]
-  const options = { verdicts, adaptations, literals: false, minSources: 1 }
+  const options = { verdicts, adaptations, literals: false, minSources: 1, artifacts: [], commands: [] }
   const write = (file, content) => {
     mkdirSync(dirname(join(root, file)), { recursive: true })
     writeFileSync(join(root, file), content)
@@ -358,7 +474,14 @@ function selfTest() {
     write('packages/a/b/src/index.ts', "if (platform === 'linux' || platform === 'android') return 'ok'\n")
     if (!expect('a narrowed corpus was accepted', false,
       () => runAudit(root, { ...options, minSources: 99 }))) return false
-    console.log('self-test passed: adapted tree accepted; new branch, dropped adaptation, and narrowed corpus rejected')
+    const withArtifact = {
+      ...options,
+      artifacts: [{ glob: 'node_modules/.pnpm/@esbuild+android-arm64@*/node_modules/@esbuild/android-arm64/package.json', reason: 'fixture' }],
+    }
+    if (!expect('a missing native artifact was accepted', false, () => runAudit(root, withArtifact))) return false
+    write('node_modules/.pnpm/@esbuild+android-arm64@1.0.0/node_modules/@esbuild/android-arm64/package.json', '{}\n')
+    if (!expect('a present native artifact was rejected', true, () => runAudit(root, withArtifact))) return false
+    console.log('self-test passed: adapted tree accepted; new branch, dropped adaptation, narrowed corpus, and missing native artifact rejected')
     return true
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -390,6 +513,8 @@ if (argv.includes('--self-test')) {
 const passed = runAudit(root, {
   verdicts: VERDICTS,
   adaptations: ADAPTATIONS,
+  artifacts: NATIVE_ARTIFACTS,
+  commands: HOST_COMMANDS,
   literals: argv.includes('--literals'),
   minSources: MIN_RUNTIME_SOURCES,
 })

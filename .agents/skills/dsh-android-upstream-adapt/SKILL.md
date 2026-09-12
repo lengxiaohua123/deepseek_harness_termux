@@ -43,6 +43,7 @@ node scripts/android-platform-audit.mjs              # platform routing: new lin
 
 - Check 1 fails on a `'linux'` comparison in runtime source that has no recorded verdict, and on a file whose comparison count grew — an upstream branch Android would silently skip. It matches any expression carrying the platform (`platform`, `facts.platform`, `os.platform()`, a local alias), in either operand order, so a renamed parameter cannot hide a site.
 - Check 2 fails when a recorded adaptation lost its markers. This is the check that matters most after a merge: upstream overwriting `platform === 'linux' || platform === 'android'` back to its own form leaves the site count identical, so check 1 alone reports clean.
+- Check 3 fails when a native artifact the Android toolchain or runtime resolves is gone — the android binding of esbuild/rolldown/rollup/lightningcss/oxlint/oxc-resolver, the locally compiled koffi and node-pty binaries, the sharp wasm fallback, or a PATH `rg`. A dependency bump or an install under a linux-reporting node breaks exactly one of those.
 - It also refuses a narrowed corpus, so a broken walk cannot look like a clean tree.
 
 Run it repo-wide, never only over the merge diff: a renamed or newly split file carries branches the diff view hides behind a rename.
@@ -70,7 +71,7 @@ High-risk adaptation surfaces. Upstream rewrites here force re-application — t
 
 ### The platform-lie question
 
-Do not replace these dual matches by shimming `process.platform` to report `linux`. Measured on this machine: the shim works (`process.platform` is `configurable`, `os.platform()` follows it, and `NODE_OPTIONS` propagates it to children), but it makes JS believe `linux` while the native binaries stay android-built. `koffi` then fails with `Cannot find the native Koffi module` because its JS loader looks under `build/koffi/linux_arm64/` while the local build lands in `android_arm64/`. `sharp` and `node-pty` survive, and `canOpenNativePath()` flips to `false` because it requires `DISPLAY`/`WAYLAND_DISPLAY`, which disables native path opening. The lie also removes the signal that Android is not Linux: a future `'linux'` branch gets taken silently instead of falling through where this audit can see it. It saves the two one-line dual matches in `process-inspector.ts` and `spawn.ts` — and the upstream helper below retires those properly.
+Do not replace these dual matches by shimming `process.platform` to report `linux`. Measured on this machine: the shim works (`process.platform` is `configurable`, `os.platform()` follows it, and `NODE_OPTIONS` propagates it to children), but it makes JS believe `linux` while the installed native binaries stay android-built. `koffi` then fails with `Cannot find the native Koffi module` because its loader reads `build/koffi/<platform>_<arch>/koffi.node` and the local build lands in `android_arm64/`. Worse, no `linux-arm64` variant of the esbuild, rolldown, rollup, lightningcss, oxlint, or oxc-resolver bindings is installed, so the build toolchain itself stops resolving. `sharp` and `node-pty` survive the lie, and `canOpenNativePath()` flips to `false` because it requires `DISPLAY`/`WAYLAND_DISPLAY`, which disables native path opening. The lie also removes the signal that Android is not Linux: a future `'linux'` branch gets taken silently instead of falling through where this audit can see it. It saves the two one-line dual matches in `process-inspector.ts` and `spawn.ts` — and the upstream helper below retires those properly.
 
 ### Upstream draft: retire the two dual matches
 
@@ -91,6 +92,20 @@ Version bumps of `koffi` or `node-pty` break the pinned patches; update them tog
 - If upstream bumps `sharp`, keep `@img/sharp-wasm32` in root devDependencies (the Android fallback; there is no libvips).
 
 Toolchain prereqs for `scripts/android-native-build.sh`: `cc`, `make`, `python3`; node-pty builds with `--nodedir=$PREFIX` because the official downloaded headers gate statx behind the Android NDK and fail on Termux.
+
+Then confirm the whole native layer resolved — dependencies branch on the platform string too, and they do not all behave the same:
+
+```sh
+node scripts/android-platform-audit.mjs    # "native artifacts: 9/9 resolved, host commands: 1/1 present"
+```
+
+| Class | Packages | What Android needs |
+| --- | --- | --- |
+| npm publishes an `android-arm64` variant | `@esbuild/android-arm64` (3 pinned versions), `@rolldown/binding-android-arm64`, `@rollup/rollup-android-arm64`, `@oxlint/binding-android-arm64`, `@oxc-resolver/binding-android-arm64`, `lightningcss-android-arm64`, `@napi-rs/canvas-android-arm64` | Nothing beyond `pnpm install`: pnpm's `os`/`cpu` filtering picks the android variant when the platform string is `android`. This is why the build, the bundler, CSS, and lint run natively on Termux |
+| No android prebuild, compiled locally | `koffi`, `node-pty` | `scripts/android-native-build.sh`. Both loaders look for a directory named from the platform string — koffi at `build/koffi/<platform>_<arch>/koffi.node`, node-pty preferring `build/Release` — so the build must land where the loader of an `android`-reporting node looks |
+| No android variant, supported fallback | `sharp` → `@img/sharp-wasm32`; `@vscode/ripgrep` → PATH `rg` | `sharp`'s own loader ends its fallback chain at `require('@img/sharp-wasm32/sharp.node')` and its error text names that install. `@vscode/ripgrep` has no android package at all, so `resolveRgPath()` falls back to a PATH `rg` (`pkg install ripgrep`) |
+
+Two consequences worth keeping in mind. A `pnpm install` run under a node build that reports `linux` (some Termux builds do) installs the `linux-arm64` variants of the first class instead — glibc binaries that will not load on bionic; the audit's artifact check fails in exactly that case, naming the missing package. And the `@esbuild`/`@rolldown`/`lightningcss` bindings are the reason the platform string cannot simply be faked as `linux`: no `linux-arm64` binding is installed, so bundling, CSS, and lint would fail to resolve, on top of `koffi` losing its native module.
 
 ## 3. Build — full build on big merges
 
@@ -198,7 +213,7 @@ Two traps when re-applying a companion by hand, both hit during the 0.1.5-rc.2 s
 |---|---|---|
 | `patches/koffi@3.1.1.patch` + matching `pnpm-workspace.yaml` `patchedDependencies` entry | koffi statx call → raw `syscall(SYS_statx, ...)` | bionic headers do not declare statx; pinned to koffi@3.1.1 |
 | `package.json` devDependency `@img/sharp-wasm32` | wasm fallback for sharp | Android has no libvips; arch-independent |
-| `scripts/android-native-build.sh` | compiles koffi + node-pty locally; the node-pty `.pnpm` glob tracks the major (currently `node-pty@1.2*` — update it on major bumps) | no android-arm64 prebuilds; node-pty needs `--nodedir=$PREFIX` |
+| `scripts/android-native-build.sh` | compiles koffi + node-pty locally; the node-pty `.pnpm` glob tracks the major (currently `node-pty@1.2*` — update it on major bumps) | no android-arm64 prebuilds; node-pty needs `--nodedir=$PREFIX`. Each compiled artifact is asserted by `android-platform-audit.mjs`, which is what catches a version bump that moves the `.pnpm` path |
 | `pnpm-lock.yaml` | lockfile | regenerate via `pnpm install --ignore-scripts` |
 
 Upstream-owned, do not touch: `patches/node-pty@1.1.0.patch` (upstream supplies it).
@@ -216,7 +231,7 @@ Upstream-owned, do not touch: `patches/node-pty@1.1.0.patch` (upstream supplies 
 - `AGENTS.md` + `scripts/doc-budgets.manifest.json` — refreshed package index and its raised budget ceiling (1900→2000); no Android content, but keep the local copy when upstream rewrites them.
 - `.github/workflows/sync-upstream.yml` — daily upstream mirror; must stay on the default branch.
 - `.agents/skills/` — the skills themselves.
-- `scripts/android-platform-audit.mjs` — the platform-routing gate (verdicts + adaptation markers + corpus floor). Its `VERDICTS` and `ADAPTATIONS` tables are the machine-readable half of the ledger; `--self-test` proves both checks reject.
+- `scripts/android-platform-audit.mjs` — the platform gate: three checks (unrecorded `'linux'` branches, adaptation markers, native dependency artifacts) plus a corpus floor. Its `VERDICTS`, `ADAPTATIONS`, and `NATIVE_ARTIFACTS` tables are the machine-readable half of the ledger; `--self-test` proves every rejection.
 - `.agents/skills/dsh-android-upstream-adapt/upstream-proc-process-tree.patch` + `upstream-proc-process-tree-pr.md` — the upstream draft that retires adaptations 6 and 7. Fork tooling, never merged into `master`.
 
 Machine-local, NOT in the repo (do not hunt for them in the diff): `~/.zshrc` `dshstart`/`dshstop`/`dshstatus`/`dshattach` tmux helpers, `~/.dsh/settings.yaml` (danger-full-access default).

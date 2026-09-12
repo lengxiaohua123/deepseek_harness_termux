@@ -87,7 +87,7 @@ bash scripts/android-native-build.sh # koffi + node-pty have no android-arm64 pr
 Version bumps of `koffi` or `node-pty` break the pinned patches; update them together:
 
 - `patches/koffi@3.1.1.patch` — swaps the `statx()` call for a raw syscall (bionic headers do not declare it).
-- `patches/node-pty@1.1.0.patch`.
+- `patches/node-pty@1.2.0-beta.15.patch` (upstream owns this one; the local `patchedDependencies` key must match the installed version, not a fixed major).
 - `pnpm-workspace.yaml` `patchedDependencies` keys must match the patch filenames.
 - If upstream bumps `sharp`, keep `@img/sharp-wasm32` in root devDependencies (the Android fallback; there is no libvips).
 
@@ -137,13 +137,13 @@ node --import tsx/esm node_modules/vitest/vitest.mjs run packages/<group>/<pkg>/
 
 This bypasses the same pnpm pre-run trap as step 3.
 
-All three packages' suites are green on this machine (attachment, subprocess, terminal-bash — 207 tests). Earlier "environment failures" were resolved by the adaptations below, not worked around:
+The adapted-package suites are green on this machine except one known environmental failure: 1144 passed / 1 failed / 18 skipped (45 files, 1163 tests) across `attachment-local`, `subprocess-local`, `settings-file`, `directory-picker-auto`, `native-command`, `tool-bash`, `session-persistence-jsonl`, and `fs-local`; the single failure is the sharp-wasm32 SVG `<text>` case below. Earlier "environment failures" were resolved by the adaptations below, not worked around:
 
 - `attachment-local/tests/store.spec.ts` — failed on root-owned Android ancestors (`/data`, `/data/data`) during the durability walk and on forbidden hard links; both now degrade gracefully (see step 7).
 - `subprocess-local/tests/process-exit.spec.ts` — failed on the android platform throw in `createProcessInspector`, not on sandbox cleanup.
 - `terminal-bash/tests/local.spec.ts` — failed on the same inspector throw plus a test that hardcoded `/bin/bash`; both fixed.
 
-Full-suite baseline after the 0.1.1-rc.2 sync (14.5 min, `--maxWorkers=4`): 14563 passed / 31 failed / 116 skipped (14710 tests, 872 files). All 31 are environmental — none touch the adapted packages:
+Full-suite baseline after the 0.1.5-rc.2 sync (14.5 min, `--maxWorkers=4`): 14563 passed / 31 failed / 116 skipped (14710 tests, 872 files). All 31 are environmental — none touch the adapted packages:
 
 - oxlint-contract and install-lefthook — tooling version / hard-link install; lefthook is unused on Termux.
 - subagent-claude-code / subagent-codex real-product — need the external CLIs and their API keys.
@@ -216,7 +216,7 @@ Two traps when re-applying a companion by hand, both hit during the 0.1.5-rc.2 s
 | `scripts/android-native-build.sh` | compiles koffi + node-pty locally; the node-pty `.pnpm` glob tracks the major (currently `node-pty@1.2*` — update it on major bumps) | no android-arm64 prebuilds; node-pty needs `--nodedir=$PREFIX`. Each compiled artifact is asserted by `android-platform-audit.mjs`, which is what catches a version bump that moves the `.pnpm` path |
 | `pnpm-lock.yaml` | lockfile | regenerate via `pnpm install --ignore-scripts` |
 
-Upstream-owned, do not touch: `patches/node-pty@1.1.0.patch` (upstream supplies it).
+Upstream-owned, do not touch: `patches/node-pty@1.2.0-beta.15.patch` (upstream supplies it; rename it and the `pnpm-workspace.yaml` key together when upstream bumps node-pty).
 
 ### Configuration mapping
 
